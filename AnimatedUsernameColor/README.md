@@ -65,7 +65,7 @@ Google Fonts are loaded on demand by appending a `<link>` tag to `<head>`, and a
 
 ### 2.4.0
 - Added Pulse animation style.
-- Added color preset palettes.
+- Added custom color preset palettes. (You can now make your own color presets)
 
 ### 2.2.3
 - Rewritten to use Unknown654Lib.
