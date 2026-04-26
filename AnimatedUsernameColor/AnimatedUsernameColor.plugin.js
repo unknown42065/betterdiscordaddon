@@ -3,9 +3,9 @@
  * @description Animates your own username color in chat with customizable colors, speed, and font.
  * @version 2.3.9
  * @author Unknown654#0
- * @website https://github.com/Unknown42065/BetterDiscordAddon
- * @updateUrl https://raw.githubusercontent.com/Unknown42065/BetterDiscordAddon/main/AnimatedUsernameColor/AnimatedUsernameColor.plugin.js
- * @source    https://github.com/Unknown42065/BetterDiscordAddon/tree/main/AnimatedUsernameColor
+ * @website https://github.com/Unknown42065/BetterDiscordAddons
+ * @updateUrl https://raw.githubusercontent.com/Unknown42065/BetterDiscordAddons/main/AnimatedUsernameColor/AnimatedUsernameColor.plugin.js
+ * @source    https://github.com/Unknown42065/BetterDiscordAddons/tree/main/AnimatedUsernameColor
  */
 
 const PLUGIN_NAME = "AnimatedUsernameColor";
