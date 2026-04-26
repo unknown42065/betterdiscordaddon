@@ -11,59 +11,64 @@
 
 module.exports = class TabBar {
     constructor() {
-        this.tabs = [];
-        this.maxTabs = 8;
-        this.dragSrcIndex = null;
-        this.domObserver = null;
+        this.tabs          = [];
+        this.maxTabs       = 8;
+        this.dragSrcIndex  = null;
+        this.domObserver   = null;
         this.fluxUnsubscribe = null;
-        this._dispatchRetries = 0;
-        this._dispatchMaxRetries = 20;
+        this._retryFlux    = null;
     }
  
-    findModule(...props) {
-        if (BdApi.Webpack?.getModule) {
-            return BdApi.Webpack.getModule(m => props.every(p => m?.[p] !== undefined));
+    _requireLib() {
+        if (!window.Unknown654Lib) {
+            BdApi.UI?.showToast?.("TabBar requires Unknown654Lib — please install it first.", { type: "error" });
+            return false;
         }
-        return BdApi.findModuleByProps?.(...props) ?? null;
-    }
- 
-    getDispatcher() {
-        if (BdApi.Webpack?.getByKeys) {
-            const m = BdApi.Webpack.getByKeys("dispatch", "subscribe");
-            if (m) return m;
-        }
-        if (BdApi.Webpack?.getModule) {
-            const m = BdApi.Webpack.getModule(
-                m => typeof m?.dispatch === "function" &&
-                     typeof m?.subscribe === "function" &&
-                     typeof m?.unsubscribe === "function"
-            );
-            if (m) return m;
-        }
-        return BdApi.findModuleByProps?.("dispatch", "subscribe") ?? null;
+        return true;
     }
  
     start() {
-        this.loadTabs();
-        this.injectStyles();
-        this.setupDomObserver();
-        this.subscribeToFlux();
+        if (!this._requireLib()) return;
+        const Lib = window.Unknown654Lib;
  
-        const SelectedChannelStore = this.findModule("getChannelId", "getLastSelectedChannelId");
-        const SelectedGuildStore   = this.findModule("getGuildId",   "getLastSelectedGuildId");
+        this.loadTabs();
+        Lib.addStyle("TabBar", this._css());
+        this._setupDomObserver();
+ 
+        this._retryFlux = new Lib.Retry({
+            interval: 500,
+            maxTries: 20,
+            onFail: () => Lib.showToast("TabBar: Could not find Dispatcher. Try Ctrl+R.", { type: "error" }),
+        });
+ 
+        this._retryFlux.start(() => {
+            const Dispatcher = Lib.getDispatcher();
+            if (!Dispatcher) return false;
+ 
+            this._onChannelSelect = ({ channelId, guildId }) => {
+                if (channelId) this._addOrActivateTab(channelId, guildId || null);
+            };
+            Dispatcher.subscribe("CHANNEL_SELECT", this._onChannelSelect);
+            this.fluxUnsubscribe = () => Dispatcher.unsubscribe("CHANNEL_SELECT", this._onChannelSelect);
+            return true;
+        });
+ 
+        const SelectedChannelStore = Lib.findModule("getChannelId", "getLastSelectedChannelId");
+        const SelectedGuildStore   = Lib.findModule("getGuildId",   "getLastSelectedGuildId");
         const channelId = SelectedChannelStore?.getChannelId();
         const guildId   = SelectedGuildStore?.getGuildId();
-        if (channelId) this.addOrActivateTab(channelId, guildId);
+        if (channelId) this._addOrActivateTab(channelId, guildId);
     }
  
     stop() {
-        if (BdApi.DOM?.removeStyle) BdApi.DOM.removeStyle("TabBar");
-        else BdApi.clearCSS?.("TabBar");
+        if (!window.Unknown654Lib) return;
+        const Lib = window.Unknown654Lib;
  
-        if (this.fluxUnsubscribe) this.fluxUnsubscribe();
-        if (this.domObserver)     this.domObserver.disconnect();
-        if (this._dispatchRetryTimer) clearTimeout(this._dispatchRetryTimer);
-        this.removeBar();
+        Lib.removeStyle("TabBar");
+        this.fluxUnsubscribe?.();
+        this.domObserver?.disconnect();
+        this._retryFlux?.stop();
+        this._removeBar();
     }
  
     loadTabs() {
@@ -71,33 +76,14 @@ module.exports = class TabBar {
         catch { this.tabs = []; }
     }
  
-    saveTabs() {
+    _saveTabs() {
         localStorage.setItem("TabBar_tabs", JSON.stringify(this.tabs));
     }
  
-    subscribeToFlux() {
-        const Dispatcher = this.getDispatcher();
- 
-        if (!Dispatcher) {
-            if (this._dispatchRetries < this._dispatchMaxRetries) {
-                this._dispatchRetries++;
-                this._dispatchRetryTimer = setTimeout(() => this.subscribeToFlux(), 500);
-            } else {
-                BdApi.UI?.showToast?.("TabBar: Could not find Dispatcher. Try Ctrl+R.", { type: "error" });
-            }
-            return;
-        }
- 
-        this._onChannelSelect = ({ channelId, guildId }) => {
-            if (channelId) this.addOrActivateTab(channelId, guildId || null);
-        };
-        Dispatcher.subscribe("CHANNEL_SELECT", this._onChannelSelect);
-        this.fluxUnsubscribe = () => Dispatcher.unsubscribe("CHANNEL_SELECT", this._onChannelSelect);
-    }
- 
-    getChannelInfo(channelId, guildId) {
-        const ChannelStore = this.findModule("getChannel", "getDMFromUserId");
-        const GuildStore   = this.findModule("getGuild",   "getGuilds");
+    _getChannelInfo(channelId, guildId) {
+        const Lib         = window.Unknown654Lib;
+        const ChannelStore = Lib.findModule("getChannel", "getDMFromUserId");
+        const GuildStore   = Lib.findModule("getGuild",   "getGuilds");
         const channel = ChannelStore?.getChannel(channelId);
         const guild   = guildId ? GuildStore?.getGuild(guildId) : null;
  
@@ -106,10 +92,10 @@ module.exports = class TabBar {
             if (channel.name) {
                 channelName = channel.name;
             } else if (channel.type === 1) {
-                const UserStore = this.findModule("getUser", "getCurrentUser");
+                const UserStore = Lib.findModule("getUser", "getCurrentUser");
                 const recipient = channel.recipients?.[0];
-                const user = recipient ? UserStore?.getUser(recipient) : null;
-                channelName = user?.username || "DM";
+                const user      = recipient ? UserStore?.getUser(recipient) : null;
+                channelName     = user?.username || "DM";
             }
         }
  
@@ -125,14 +111,14 @@ module.exports = class TabBar {
         };
     }
  
-    addOrActivateTab(channelId, guildId) {
+    _addOrActivateTab(channelId, guildId) {
         const existing = this.tabs.findIndex(t => t.channelId === channelId);
  
         if (existing !== -1) {
             this.tabs.forEach((t, i) => { t.active = (i === existing); });
         } else {
             this.tabs.forEach(t => { t.active = false; });
-            const info = this.getChannelInfo(channelId, guildId);
+            const info = this._getChannelInfo(channelId, guildId);
             this.tabs.push({ ...info, active: true });
  
             if (this.tabs.length > this.maxTabs) {
@@ -141,11 +127,11 @@ module.exports = class TabBar {
             }
         }
  
-        this.saveTabs();
-        this.renderBar();
+        this._saveTabs();
+        this._renderBar();
     }
  
-    removeTab(channelId) {
+    _removeTab(channelId) {
         const idx = this.tabs.findIndex(t => t.channelId === channelId);
         if (idx === -1) return;
  
@@ -155,27 +141,21 @@ module.exports = class TabBar {
         if (wasActive && this.tabs.length > 0) {
             const next = this.tabs[Math.max(0, idx - 1)];
             next.active = true;
-            this.navigateTo(next.channelId, next.guildId);
+            window.Unknown654Lib.navigate(next.channelId, next.guildId);
         }
  
-        this.saveTabs();
-        this.renderBar();
+        this._saveTabs();
+        this._renderBar();
     }
  
-    navigateTo(channelId, guildId) {
-        const Nav = this.findModule("transitionToGuild", "replaceWith");
-        if (guildId) Nav?.transitionToGuild(guildId, channelId);
-        else         Nav?.transitionTo(`/channels/@me/${channelId}`);
-    }
- 
-    setupDomObserver() {
+    _setupDomObserver() {
         this.domObserver = new MutationObserver(() => {
-            if (!document.getElementById("tabbar-root")) this.renderBar();
+            if (!document.getElementById("tabbar-root")) this._renderBar();
         });
         this.domObserver.observe(document.body, { childList: true, subtree: true });
     }
  
-    getChatColumn() {
+    _getChatColumn() {
         return (
             document.querySelector('[class*="chatContent-"]') ||
             document.querySelector('[class*="chat-"]')         ||
@@ -183,14 +163,14 @@ module.exports = class TabBar {
         );
     }
  
-    removeBar() {
+    _removeBar() {
         document.getElementById("tabbar-root")?.remove();
     }
  
-    renderBar() {
+    _renderBar() {
         let bar = document.getElementById("tabbar-root");
         if (!bar) {
-            const chatCol = this.getChatColumn();
+            const chatCol = this._getChatColumn();
             if (!chatCol) return;
             chatCol.style.display       = "flex";
             chatCol.style.flexDirection = "column";
@@ -234,16 +214,16 @@ module.exports = class TabBar {
  
             el.addEventListener("click", e => {
                 if (close.contains(e.target)) return;
-                this.navigateTo(tab.channelId, tab.guildId);
+                window.Unknown654Lib.navigate(tab.channelId, tab.guildId);
             });
  
             close.addEventListener("click", e => {
                 e.stopPropagation();
-                this.removeTab(tab.channelId);
+                this._removeTab(tab.channelId);
             });
  
             el.addEventListener("auxclick", e => {
-                if (e.button === 1) this.removeTab(tab.channelId);
+                if (e.button === 1) this._removeTab(tab.channelId);
             });
  
             el.addEventListener("dragstart", e => {
@@ -275,16 +255,16 @@ module.exports = class TabBar {
                 const moved = this.tabs.splice(this.dragSrcIndex, 1)[0];
                 this.tabs.splice(index, 0, moved);
                 this.dragSrcIndex = null;
-                this.saveTabs();
-                this.renderBar();
+                this._saveTabs();
+                this._renderBar();
             });
  
             bar.appendChild(el);
         });
     }
  
-    injectStyles() {
-        const css = `
+    _css() {
+        return `
             #tabbar-root {
                 display:         flex;
                 align-items:     center;
@@ -378,9 +358,6 @@ module.exports = class TabBar {
             .tabbar-tab.active .tabbar-close { opacity: 0.5; }
             .tabbar-close:hover              { opacity: 1 !important; color: var(--text-danger); }
         `;
- 
-        if (BdApi.DOM?.addStyle) BdApi.DOM.addStyle("TabBar", css);
-        else BdApi.injectCSS?.("TabBar", css);
     }
 };
  
