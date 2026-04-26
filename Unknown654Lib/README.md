@@ -84,7 +84,7 @@ retry.start(() => {
 ## Changelog
 
 ### 1.1.1
-- **Fix:** `navigate()` now uses `getByKeys("transitionToGuild", "transitionTo")` as the first search path and checks that both `transitionToGuild` *and* `transitionTo` are present. The old filter required `replaceWith`, which is not always on the same module, causing DM navigation to silently fail on some Discord builds.
+- **Fix:** `navigate()` now uses `getByKeys("transitionToGuild", "transitionTo")` as the first search path and checks that both `transitionToGuild` *and* `transitionTo` are present. The old filter required `replaceWith`, which is not always on the same module causing DM navigation to silently fail on some Discord builds.
 
 ### 1.1.0
 - Added `getStore()` helper.
