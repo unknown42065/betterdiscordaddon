@@ -1,8 +1,9 @@
 /**
  * @name TabBar
  * @description Browser-style tab bar for Discord — drag to reorder, middle-click to close.
- * @version 0.3.7
+ * @version 0.3.8
  * @author Unknown654
+ * @authorLink https://github.com/Unknown42065/
  * @website https://github.com/Unknown42065/BetterDiscordAddons
  * @updateUrl https://raw.githubusercontent.com/Unknown42065/BetterDiscordAddons/main/TabBar/TabBar.plugin.js
  * @source https://github.com/Unknown42065/BetterDiscordAddons/tree/main/TabBar
@@ -13,75 +14,105 @@ module.exports = class TabBar {
         this.tabs = [];
         this.maxTabs = 8;
         this.dragSrcIndex = null;
-        this.attached = false;
         this.domObserver = null;
         this.fluxUnsubscribe = null;
+        this._dispatchRetries = 0;
+        this._dispatchMaxRetries = 20;
     }
-
+ 
     findModule(...props) {
         if (BdApi.Webpack?.getModule) {
             return BdApi.Webpack.getModule(m => props.every(p => m?.[p] !== undefined));
         }
         return BdApi.findModuleByProps?.(...props) ?? null;
     }
-
+ 
+    getDispatcher() {
+        if (BdApi.Webpack?.getByKeys) {
+            const m = BdApi.Webpack.getByKeys("dispatch", "subscribe");
+            if (m) return m;
+        }
+        if (BdApi.Webpack?.getModule) {
+            const m = BdApi.Webpack.getModule(
+                m => typeof m?.dispatch === "function" &&
+                     typeof m?.subscribe === "function" &&
+                     typeof m?.unsubscribe === "function"
+            );
+            if (m) return m;
+        }
+        return BdApi.findModuleByProps?.("dispatch", "subscribe") ?? null;
+    }
+ 
     start() {
         this.loadTabs();
         this.injectStyles();
-        this.subscribeToFlux();
         this.setupDomObserver();
-
+        this.subscribeToFlux();
+ 
         const SelectedChannelStore = this.findModule("getChannelId", "getLastSelectedChannelId");
         const SelectedGuildStore   = this.findModule("getGuildId",   "getLastSelectedGuildId");
         const channelId = SelectedChannelStore?.getChannelId();
         const guildId   = SelectedGuildStore?.getGuildId();
         if (channelId) this.addOrActivateTab(channelId, guildId);
     }
-
+ 
     stop() {
         if (BdApi.DOM?.removeStyle) BdApi.DOM.removeStyle("TabBar");
         else BdApi.clearCSS?.("TabBar");
-
+ 
         if (this.fluxUnsubscribe) this.fluxUnsubscribe();
         if (this.domObserver)     this.domObserver.disconnect();
+        if (this._dispatchRetryTimer) clearTimeout(this._dispatchRetryTimer);
         this.removeBar();
     }
-
+ 
     loadTabs() {
         try { this.tabs = JSON.parse(localStorage.getItem("TabBar_tabs") || "[]"); }
         catch { this.tabs = []; }
     }
-
+ 
     saveTabs() {
         localStorage.setItem("TabBar_tabs", JSON.stringify(this.tabs));
     }
-
+ 
     subscribeToFlux() {
-        const Dispatcher = this.findModule("dispatch", "subscribe");
+        const Dispatcher = this.getDispatcher();
+ 
+        if (!Dispatcher) {
+            if (this._dispatchRetries < this._dispatchMaxRetries) {
+                this._dispatchRetries++;
+                this._dispatchRetryTimer = setTimeout(() => this.subscribeToFlux(), 500);
+            } else {
+                BdApi.UI?.showToast?.("TabBar: Could not find Dispatcher. Try Ctrl+R.", { type: "error" });
+            }
+            return;
+        }
+ 
         this._onChannelSelect = ({ channelId, guildId }) => {
             if (channelId) this.addOrActivateTab(channelId, guildId || null);
         };
         Dispatcher.subscribe("CHANNEL_SELECT", this._onChannelSelect);
         this.fluxUnsubscribe = () => Dispatcher.unsubscribe("CHANNEL_SELECT", this._onChannelSelect);
     }
-
+ 
     getChannelInfo(channelId, guildId) {
         const ChannelStore = this.findModule("getChannel", "getDMFromUserId");
         const GuildStore   = this.findModule("getGuild",   "getGuilds");
         const channel = ChannelStore?.getChannel(channelId);
         const guild   = guildId ? GuildStore?.getGuild(guildId) : null;
-
+ 
         let channelName = "unknown";
         if (channel) {
-            if (channel.name) channelName = channel.name;
-            else if (channel.type === 1) {
+            if (channel.name) {
+                channelName = channel.name;
+            } else if (channel.type === 1) {
                 const UserStore = this.findModule("getUser", "getCurrentUser");
                 const recipient = channel.recipients?.[0];
                 const user = recipient ? UserStore?.getUser(recipient) : null;
                 channelName = user?.username || "DM";
             }
         }
-
+ 
         return {
             channelId,
             guildId:     guildId || null,
@@ -93,69 +124,69 @@ module.exports = class TabBar {
             isDM: !guildId,
         };
     }
-
+ 
     addOrActivateTab(channelId, guildId) {
         const existing = this.tabs.findIndex(t => t.channelId === channelId);
-
+ 
         if (existing !== -1) {
             this.tabs.forEach((t, i) => { t.active = (i === existing); });
         } else {
             this.tabs.forEach(t => { t.active = false; });
             const info = this.getChannelInfo(channelId, guildId);
             this.tabs.push({ ...info, active: true });
-
+ 
             if (this.tabs.length > this.maxTabs) {
                 const evict = this.tabs.findIndex(t => !t.active);
                 if (evict !== -1) this.tabs.splice(evict, 1);
             }
         }
-
+ 
         this.saveTabs();
         this.renderBar();
     }
-
+ 
     removeTab(channelId) {
         const idx = this.tabs.findIndex(t => t.channelId === channelId);
         if (idx === -1) return;
-
+ 
         const wasActive = this.tabs[idx].active;
         this.tabs.splice(idx, 1);
-
+ 
         if (wasActive && this.tabs.length > 0) {
             const next = this.tabs[Math.max(0, idx - 1)];
             next.active = true;
             this.navigateTo(next.channelId, next.guildId);
         }
-
+ 
         this.saveTabs();
         this.renderBar();
     }
-
+ 
     navigateTo(channelId, guildId) {
         const Nav = this.findModule("transitionToGuild", "replaceWith");
         if (guildId) Nav?.transitionToGuild(guildId, channelId);
         else         Nav?.transitionTo(`/channels/@me/${channelId}`);
     }
-
+ 
     setupDomObserver() {
         this.domObserver = new MutationObserver(() => {
             if (!document.getElementById("tabbar-root")) this.renderBar();
         });
         this.domObserver.observe(document.body, { childList: true, subtree: true });
     }
-
+ 
     getChatColumn() {
         return (
-            document.querySelector('[class*="chatContent-"]')  ||
-            document.querySelector('[class*="chat-"]')          ||
+            document.querySelector('[class*="chatContent-"]') ||
+            document.querySelector('[class*="chat-"]')         ||
             document.querySelector('[class*="content-"] > [class*="chat"]')
         );
     }
-
+ 
     removeBar() {
         document.getElementById("tabbar-root")?.remove();
     }
-
+ 
     renderBar() {
         let bar = document.getElementById("tabbar-root");
         if (!bar) {
@@ -163,20 +194,20 @@ module.exports = class TabBar {
             if (!chatCol) return;
             chatCol.style.display       = "flex";
             chatCol.style.flexDirection = "column";
-
+ 
             bar = document.createElement("div");
             bar.id = "tabbar-root";
             chatCol.insertBefore(bar, chatCol.firstChild);
         }
-
+ 
         bar.innerHTML = "";
-
+ 
         this.tabs.forEach((tab, index) => {
             const el = document.createElement("div");
             el.className   = `tabbar-tab${tab.active ? " active" : ""}`;
             el.draggable   = true;
             el.dataset.idx = index;
-
+ 
             if (tab.guildIcon) {
                 const img = document.createElement("img");
                 img.src       = tab.guildIcon;
@@ -188,70 +219,70 @@ module.exports = class TabBar {
                 dot.className = "tabbar-dot";
                 el.appendChild(dot);
             }
-
+ 
             const name = document.createElement("span");
             name.className   = "tabbar-name";
             name.textContent = tab.channelName;
             name.title       = `#${tab.channelName}  —  ${tab.guildName}`;
             el.appendChild(name);
-
+ 
             const close = document.createElement("span");
             close.className   = "tabbar-close";
             close.textContent = "✕";
             close.title       = "Close tab";
             el.appendChild(close);
-
+ 
             el.addEventListener("click", e => {
                 if (close.contains(e.target)) return;
                 this.navigateTo(tab.channelId, tab.guildId);
             });
-
+ 
             close.addEventListener("click", e => {
                 e.stopPropagation();
                 this.removeTab(tab.channelId);
             });
-
+ 
             el.addEventListener("auxclick", e => {
                 if (e.button === 1) this.removeTab(tab.channelId);
             });
-
+ 
             el.addEventListener("dragstart", e => {
                 this.dragSrcIndex = index;
                 e.dataTransfer.effectAllowed = "move";
                 setTimeout(() => el.classList.add("dragging"), 0);
             });
-
+ 
             el.addEventListener("dragend", () => {
                 el.classList.remove("dragging");
                 bar.querySelectorAll(".drag-over").forEach(t => t.classList.remove("drag-over"));
             });
-
+ 
             el.addEventListener("dragover", e => {
                 e.preventDefault();
                 e.dataTransfer.dropEffect = "move";
                 if (index !== this.dragSrcIndex) el.classList.add("drag-over");
             });
-
+ 
             el.addEventListener("dragleave", () => {
                 el.classList.remove("drag-over");
             });
-
+ 
             el.addEventListener("drop", e => {
                 e.preventDefault();
                 el.classList.remove("drag-over");
                 if (this.dragSrcIndex === null || this.dragSrcIndex === index) return;
-
+ 
                 const moved = this.tabs.splice(this.dragSrcIndex, 1)[0];
                 this.tabs.splice(index, 0, moved);
                 this.dragSrcIndex = null;
                 this.saveTabs();
                 this.renderBar();
             });
-
+ 
             bar.appendChild(el);
         });
     }
-
+ 
     injectStyles() {
         const css = `
             #tabbar-root {
@@ -269,7 +300,7 @@ module.exports = class TabBar {
                 z-index:         10;
             }
             #tabbar-root::-webkit-scrollbar { display: none; }
-
+ 
             .tabbar-tab {
                 display:       flex;
                 align-items:   center;
@@ -300,7 +331,7 @@ module.exports = class TabBar {
             }
             .tabbar-tab.dragging  { opacity: 0.35; }
             .tabbar-tab.drag-over { border-color: var(--brand-experiment); }
-
+ 
             .tabbar-icon {
                 width:         14px;
                 height:        14px;
@@ -315,7 +346,7 @@ module.exports = class TabBar {
                 opacity:       0.5;
                 flex-shrink:   0;
             }
-
+ 
             .tabbar-name {
                 overflow:      hidden;
                 text-overflow: ellipsis;
@@ -328,7 +359,7 @@ module.exports = class TabBar {
                 margin-right: 1px;
             }
             .tabbar-tab.active .tabbar-name::before { opacity: 0.6; }
-
+ 
             .tabbar-close {
                 display:         flex;
                 align-items:     center;
@@ -347,8 +378,9 @@ module.exports = class TabBar {
             .tabbar-tab.active .tabbar-close { opacity: 0.5; }
             .tabbar-close:hover              { opacity: 1 !important; color: var(--text-danger); }
         `;
-
+ 
         if (BdApi.DOM?.addStyle) BdApi.DOM.addStyle("TabBar", css);
         else BdApi.injectCSS?.("TabBar", css);
     }
 };
+ 
