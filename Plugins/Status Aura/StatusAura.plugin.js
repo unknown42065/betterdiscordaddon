@@ -1,29 +1,28 @@
 /**
  * @name StatusAura
  * @description Reads your Spotify or YT Music activity and shifts Discord's accent colors to match the album art palette. Plugin + live theme in one.
- * @version 1.0.0
+ * @version 1.1.0
  * @author Unknown654
  * @authorLink https://github.com/Unknown42065/
  * @website https://github.com/Unknown42065/BetterDiscordAddons
- * @updateUrl https://raw.githubusercontent.com/Unknown42065/BetterDiscordAddons/main/StatusAura/StatusAura.plugin.js
- * @source https://github.com/Unknown422065/BetterDiscordAddons/tree/main/StatusAura
+ * @updateUrl https://raw.githubusercontent.com/Unknown42065/BetterDiscordAddons/main/Plugins/StatusAura/StatusAura.plugin.js
+ * @source https://github.com/Unknown42065/BetterDiscordAddons/tree/main/Plugins/StatusAura
  */
 
 const PLUGIN_NAME = "StatusAura";
 
-// Known YT Music RPC application IDs (PreMiD, standalone apps, etc.)
 const YTMUSIC_APP_IDS = new Set([
-    "503557087041683458",   // PreMiD
-    "1020414178101817374",  // YouTube Music RPC (common standalone)
-    "463151177836658699",   // PreMiD alternative
+    "503557087041683458",
+    "1020414178101817374", 
+    "463151177836658699",  
 ]);
 
 module.exports = class StatusAura {
 
     constructor() {
         this.defaultSettings = {
-            transitionSpeed:  "medium",   // "fast" | "medium" | "slow"
-            intensity:        "balanced", // "subtle" | "balanced" | "vivid"
+            transitionSpeed:  "medium",  
+            intensity:        "balanced", 
             affectButtons:    true,
             affectScrollbars: true,
             affectMentions:   true,
@@ -32,15 +31,13 @@ module.exports = class StatusAura {
         };
         this.settings           = { ...this.defaultSettings };
         this._currentArtUrl     = null;
-        this._currentSource     = null; // "spotify" | "ytmusic" | null
+        this._currentSource     = null;
         this._unsubSpotify      = null;
         this._unsubPresence     = null;
         this._retryFlux         = null;
         this._styleIdTheme      = `${PLUGIN_NAME}-theme`;
         this._styleIdTransition = `${PLUGIN_NAME}-transition`;
     }
-
-    // ─── Lifecycle ────────────────────────────────────────────────────────────
 
     _requireLib() {
         if (!window.Unknown654Lib) {
@@ -68,18 +65,12 @@ module.exports = class StatusAura {
         this._retryFlux.start(() => {
             const Dispatcher = Lib.getDispatcher();
             if (!Dispatcher) return false;
-
-            // Spotify — Discord has a dedicated store + dispatcher event
             this._onSpotifyState = (data) => this._handleSpotifyState(data);
             Dispatcher.subscribe("SPOTIFY_PLAYER_STATE", this._onSpotifyState);
             this._unsubSpotify = () => Dispatcher.unsubscribe("SPOTIFY_PLAYER_STATE", this._onSpotifyState);
-
-            // YT Music + fallback Spotify — presence activities
             this._onPresenceUpdate = (data) => this._handlePresenceUpdate(data);
             Dispatcher.subscribe("PRESENCE_UPDATES", this._onPresenceUpdate);
             this._unsubPresence = () => Dispatcher.unsubscribe("PRESENCE_UPDATES", this._onPresenceUpdate);
-
-            // Immediate check on startup
             this._doInitialCheck();
 
             return true;
@@ -98,8 +89,6 @@ module.exports = class StatusAura {
         this._currentArtUrl = null;
         this._currentSource = null;
     }
-
-    // ─── Settings Panel ───────────────────────────────────────────────────────
 
     getSettingsPanel() {
         const panel = document.createElement("div");
@@ -129,7 +118,6 @@ module.exports = class StatusAura {
             panel.appendChild(wrap);
         };
 
-        // Select helper
         const makeSelect = (options, current, onChange) => {
             const sel = document.createElement("select");
             sel.style.cssText = "background:var(--background-secondary);color:var(--text-normal);border:1px solid var(--background-tertiary);border-radius:4px;padding:4px 8px;font-size:13px;cursor:pointer;";
@@ -143,7 +131,6 @@ module.exports = class StatusAura {
             return sel;
         };
 
-        // Toggle helper
         const makeToggle = (checked, onChange) => {
             const label = document.createElement("label");
             label.style.cssText = "position:relative;display:inline-block;width:40px;height:22px;cursor:pointer;";
@@ -174,7 +161,6 @@ module.exports = class StatusAura {
             return label;
         };
 
-        // ── Appearance ──
         section("Appearance");
         row("Transition speed", makeSelect(
             [["fast","Fast (0.3s)"],["medium","Medium (0.7s)"],["slow","Slow (1.5s)"]],
@@ -187,7 +173,6 @@ module.exports = class StatusAura {
             v => { this.settings.intensity = v; save(); if (this._currentArtUrl) this._reapplyCurrentTheme(); }
         ));
 
-        // ── Theme Targets ──
         section("Theme Targets");
         const toggleMap = [
             ["affectButtons",    "Affect buttons"],
@@ -204,7 +189,6 @@ module.exports = class StatusAura {
             }));
         });
 
-        // ── Status ──
         section("Current Status");
         const statusEl = document.createElement("div");
         statusEl.style.cssText = "font-size:13px;color:var(--text-muted);padding:8px 0;display:flex;align-items:center;gap:8px;";
@@ -221,8 +205,6 @@ module.exports = class StatusAura {
         return panel;
     }
 
-    // ─── Presence Handling ────────────────────────────────────────────────────
-
     _getCurrentUserId() {
         try {
             const UserStore = window.Unknown654Lib.findModule("getCurrentUser");
@@ -231,7 +213,6 @@ module.exports = class StatusAura {
     }
 
     _doInitialCheck() {
-        // 1. Try Spotify store first (most reliable for Spotify)
         try {
             const SpotifyStore = BdApi.Webpack?.getStore?.("SpotifyStore");
             if (SpotifyStore) {
@@ -243,7 +224,6 @@ module.exports = class StatusAura {
             }
         } catch {}
 
-        // 2. Fall back to presence store for both
         try {
             const uid = this._getCurrentUserId();
             if (!uid) return;
@@ -259,7 +239,6 @@ module.exports = class StatusAura {
             const url = this._getSpotifyArtUrl(data);
             if (url) { this._processArtUrl(url, "spotify"); return; }
         }
-        // Spotify stopped — only clear if we were showing Spotify
         if (this._currentSource === "spotify") {
             this._currentArtUrl = null;
             this._currentSource = null;
@@ -281,7 +260,6 @@ module.exports = class StatusAura {
     _processActivities(activities) {
         if (!Array.isArray(activities)) return;
 
-        // YT Music activity (presence-based since no Discord store)
         const ytActivity = activities.find(a =>
             a?.name?.toLowerCase().includes("youtube music") ||
             YTMUSIC_APP_IDS.has(a?.application_id)
@@ -291,7 +269,6 @@ module.exports = class StatusAura {
             if (url) { this._processArtUrl(url, "ytmusic"); return; }
         }
 
-        // Spotify via presence (fallback if SpotifyStore not available)
         const spotifyActivity = activities.find(a =>
             a?.type === 2 && a?.sync_id && a?.name?.toLowerCase() === "spotify"
         );
@@ -300,8 +277,6 @@ module.exports = class StatusAura {
             if (url) { this._processArtUrl(url, "spotify"); return; }
         }
 
-        // Nothing playing — reset if we were showing YT Music
-        // (let Spotify handle its own reset via SPOTIFY_PLAYER_STATE)
         if (this._currentSource === "ytmusic") {
             this._currentArtUrl = null;
             this._currentSource = null;
@@ -309,10 +284,7 @@ module.exports = class StatusAura {
         }
     }
 
-    // ─── Art URL Resolution ───────────────────────────────────────────────────
-
     _getSpotifyArtUrl(stateOrEvent) {
-        // SpotifyStore state: { track: { album: { image: { url } } } }
         const img = stateOrEvent?.track?.album?.image
                  ?? stateOrEvent?.track?.album?.images?.[1]
                  ?? stateOrEvent?.track?.album?.images?.[0];
@@ -323,40 +295,31 @@ module.exports = class StatusAura {
         const img = activity?.assets?.large_image;
         if (!img) return null;
 
-        // Spotify CDN: "spotify:ab67616d0000b273xxxxxxxxxx"
         if (img.startsWith("spotify:")) {
             const id = img.replace("spotify:", "");
             return `https://i.scdn.co/image/${id}`;
         }
 
-        // Discord media proxy: "mp:external/{hash}/{protocol}/{domain}/{path}"
         if (img.startsWith("mp:external/")) {
             const stripped = img.replace("mp:external/", "");
             const parts = stripped.split("/");
             if (parts.length >= 3) {
                 const protocol = parts[1];
                 const rest = parts.slice(2).join("/");
-                // Reconstruct: protocol://domain/path
                 const url = `${protocol}://${rest}`;
-                // Validate it looks like an image URL
                 if (url.startsWith("http")) return url;
             }
-            // Fallback: use Discord's proxy directly
             return `https://media.discordapp.net/external/${stripped}`;
         }
 
-        // App asset key (registered with Discord): fetch from CDN
         if (activity?.application_id && !img.startsWith("http") && !img.includes("/")) {
             return `https://cdn.discordapp.com/app-assets/${activity.application_id}/${img}.png`;
         }
 
-        // Already a full URL
         if (img.startsWith("http")) return img;
 
         return null;
     }
-
-    // ─── Color Pipeline ───────────────────────────────────────────────────────
 
     async _processArtUrl(url, source) {
         if (url === this._currentArtUrl) return;
@@ -366,12 +329,10 @@ module.exports = class StatusAura {
 
         try {
             const palette = await this._extractPalette(url);
-            // Guard: make sure this is still the current track
             if (palette && this._currentArtUrl === url) {
                 this._applyTheme(palette);
             }
         } catch {
-            // Silently fail — don't crash if CORS or network issues occur
         }
     }
 
@@ -392,7 +353,7 @@ module.exports = class StatusAura {
             img.onload = () => {
                 clearTimeout(timeout);
                 try {
-                    const SIZE = 48; // 48×48 gives good coverage without being slow
+                    const SIZE = 48;
                     const canvas = document.createElement("canvas");
                     canvas.width = canvas.height = SIZE;
                     const ctx = canvas.getContext("2d");
@@ -409,7 +370,6 @@ module.exports = class StatusAura {
                         const min = Math.min(r, g, b);
                         const sat = max === 0 ? 0 : (max - min) / max;
 
-                        // Skip near-black, near-white, and near-grey
                         if (brightness < 0.07 || brightness > 0.95 || sat < 0.10) continue;
 
                         const [h, s, l] = this._rgbToHsl(r, g, b);
@@ -418,17 +378,14 @@ module.exports = class StatusAura {
                     }
 
                     if (pixels.length < 8) {
-                        // Image is monochrome or very dark — use a neutral fallback
                         resolve(this._fallbackPalette());
                         return;
                     }
 
-                    // Sort by vibrancy score — most colorful first
                     pixels.sort((a, b) => b.vibrancy - a.vibrancy);
 
                     const primary = pixels[0];
 
-                    // Find a secondary color with a meaningfully different hue (≥ 35° away)
                     let secondary = null;
                     for (const p of pixels.slice(1)) {
                         const diff = Math.abs(p.h - primary.h);
@@ -439,7 +396,6 @@ module.exports = class StatusAura {
                     }
                     secondary = secondary ?? pixels[Math.max(1, Math.floor(pixels.length * 0.35))];
 
-                    // Derive tonal variants from the primary hue
                     const [h, s] = [primary.h, primary.s];
                     const sSat   = Math.min(s * 1.15, 0.95);
                     const mSat   = Math.min(s * 0.50, 0.70);
@@ -461,7 +417,6 @@ module.exports = class StatusAura {
     }
 
     _fallbackPalette() {
-        // Discord blurple — safe neutral fallback
         return {
             primary:   [88, 101, 242],
             secondary: [114, 137, 218],
@@ -471,8 +426,6 @@ module.exports = class StatusAura {
             hsl:       [235, 0.856, 0.647],
         };
     }
-
-    // ─── Colour Math ──────────────────────────────────────────────────────────
 
     _rgbToHsl(r, g, b) {
         r /= 255; g /= 255; b /= 255;
@@ -504,40 +457,31 @@ module.exports = class StatusAura {
         };
         return [Math.round(hue(h + 1 / 3) * 255), Math.round(hue(h) * 255), Math.round(hue(h - 1 / 3) * 255)];
     }
-
-    // ─── Theme Application ────────────────────────────────────────────────────
-
     _applyTheme(palette) {
         const css = this._buildThemeCss(palette);
         window.Unknown654Lib.addStyle(this._styleIdTheme, css);
     }
 
     _intensityAlpha(base) {
-        // Returns opacity multiplier based on intensity setting
         switch (this.settings.intensity) {
             case "subtle":   return base * 0.45;
             case "vivid":    return Math.min(base * 1.55, 1.0);
-            default:         return base; // balanced
+            default:         return base;
         }
     }
 
     _buildThemeCss(palette) {
         const { primary, light, dark, muted, hsl } = palette;
         const [h, s] = hsl;
-
         const rgb  = arr => arr.join(", ");
         const pr   = `rgb(${rgb(primary)})`;
         const li   = `rgb(${rgb(light)})`;
         const dk   = `rgb(${rgb(dark)})`;
-
-        // Intensity-scaled opacities
         const glowA   = this._intensityAlpha(0.20).toFixed(2);
         const tintA   = this._intensityAlpha(0.04).toFixed(2);
         const selA    = this._intensityAlpha(0.22).toFixed(2);
         const scrollA = this._intensityAlpha(0.35).toFixed(2);
         const scrollHA= this._intensityAlpha(0.55).toFixed(2);
-
-        // Build full brand experiment scale from the palette hue
         const scaleSat = Math.min(s * 1.2, 0.96);
         const SCALE = {
             100: 0.96, 130: 0.92, 160: 0.87, 200: 0.81,
@@ -551,8 +495,6 @@ module.exports = class StatusAura {
             const [r, g, b] = this._hslToRgb(h, scaleSat, l);
             return `    --brand-experiment-${key}: rgb(${r}, ${g}, ${b});`;
         }).join("\n");
-
-        // Brand 500 / 560
         const [b5r, b5g, b5b] = this._hslToRgb(h, scaleSat, 0.50);
         const brand500 = `rgb(${b5r}, ${b5g}, ${b5b})`;
         const [b6r, b6g, b6b] = this._hslToRgb(h, scaleSat, 0.42);
@@ -664,8 +606,6 @@ ${scaleVars}
 
         return css.trim();
     }
-
-    // ─── Transition CSS ───────────────────────────────────────────────────────
 
     _buildTransitionCss() {
         const speeds = { fast: "0.3s", medium: "0.7s", slow: "1.5s" };
