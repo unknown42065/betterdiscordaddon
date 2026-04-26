@@ -1,7 +1,7 @@
 /**
  * @name TabBar
  * @description Browser-style tab bar for Discord — drag to reorder, middle-click to close.
- * @version 0.4.0
+ * @version 0.4.2
  * @author Unknown654
  * @authorLink https://github.com/Unknown42065/
  * @website https://github.com/Unknown42065/BetterDiscordAddons
@@ -71,13 +71,15 @@ module.exports = class TabBar {
         this._removeBar();
     }
  
+    // FIX: replaced localStorage (unavailable in BD context) with BdApi.Data
     loadTabs() {
-        try { this.tabs = JSON.parse(localStorage.getItem("TabBar_tabs") || "[]"); }
+        try { this.tabs = BdApi.Data.load("TabBar", "tabs") ?? []; }
         catch { this.tabs = []; }
     }
  
     _saveTabs() {
-        localStorage.setItem("TabBar_tabs", JSON.stringify(this.tabs));
+        try { BdApi.Data.save("TabBar", "tabs", this.tabs); }
+        catch { /* silently ignore save failures */ }
     }
  
     _getChannelInfo(channelId, guildId) {
