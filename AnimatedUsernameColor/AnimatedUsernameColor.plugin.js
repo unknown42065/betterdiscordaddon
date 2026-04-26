@@ -5,8 +5,8 @@
  * @author Unknown654
  * @authorLink https://github.com/Unknown42065/
  * @website https://github.com/Unknown42065/BetterDiscordAddons
- * @updateUrl https://raw.githubusercontent.com/Unknown42065/BetterDiscordAddons/main/AnimatedUsernameColor/AnimatedUsernameColor.plugin.js
- * @source https://github.com/Unknown42065/BetterDiscordAddons/tree/main/AnimatedUsernameColor
+ * @updateUrl https://raw.githubusercontent.com/Unknown42065/BetterDiscordAddons/main/Plugins/AnimatedUsernameColor/AnimatedUsernameColor.plugin.js
+ * @source https://github.com/Unknown42065/BetterDiscordAddons/tree/main/Plugins/AnimatedUsernameColor
  */
 
 const PLUGIN_NAME = "AnimatedUsernameColor";
