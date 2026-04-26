@@ -1,7 +1,7 @@
 /**
  * @name Unknown654Lib
  * @description Shared utility library for Unknown654's BetterDiscord plugins.
- * @version 1.1.0
+ * @version 1.1.1
  * @author Unknown654
  * @authorLink https://github.com/Unknown42065/
  * @website https://github.com/Unknown42065/BetterDiscordAddons
@@ -84,15 +84,31 @@ module.exports = class Unknown654Lib {
                 BdApi.UI?.showToast?.(message, opts);
             },
 
+            // FIX: broadened module search so it works for both guild channels
+            // and DMs, and added a legacy fallback for older BD versions.
             navigate(channelId, guildId) {
-                if (BdApi.Webpack?.getModule) {
-                    const Nav = BdApi.Webpack.getModule(
-                        m => m?.transitionToGuild !== undefined &&
-                             m?.replaceWith       !== undefined
-                    );
-                    if (guildId) Nav?.transitionToGuild(guildId, channelId);
-                    else         Nav?.transitionTo(`/channels/@me/${channelId}`);
+                let Nav = null;
+
+                // Prefer getByKeys (fastest path)
+                if (BdApi.Webpack?.getByKeys) {
+                    try { Nav = BdApi.Webpack.getByKeys("transitionToGuild", "transitionTo"); } catch {}
                 }
+
+                // Fall back to scanning modules
+                if (!Nav && BdApi.Webpack?.getModule) {
+                    Nav = BdApi.Webpack.getModule(
+                        m => typeof m?.transitionToGuild === "function" &&
+                             typeof m?.transitionTo      === "function"
+                    );
+                }
+
+                // Legacy BD API fallback
+                if (!Nav) Nav = BdApi.findModuleByProps?.("transitionToGuild", "transitionTo") ?? null;
+
+                if (!Nav) return;
+
+                if (guildId) Nav.transitionToGuild?.(guildId, channelId);
+                else         Nav.transitionTo?.(`/channels/@me/${channelId}`);
             },
 
             Retry: class Retry {
@@ -127,4 +143,5 @@ module.exports = class Unknown654Lib {
             },
         };
     }
+};
 };
