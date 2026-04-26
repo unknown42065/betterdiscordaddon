@@ -67,9 +67,24 @@ Google Fonts are loaded on demand by appending a `<link>` tag to `<head>`, and a
 - Added Pulse animation style.
 - Added color preset palettes.
 
-### 2.0.0
+### 2.2.3
 - Rewritten to use Unknown654Lib.
 - Settings persisted via `BdApi.Data`.
+
+### 1.7.9
+- Added Color Gradients to go along with Color Presets
+- Added Fonts for more customization
+
+### 1.4.2
+- Added Color Presets
+- Bug Fixes causing colors not to show up on discord
+
+### 1.1.4
+- Bug Fixes causing AnimatedUsernameColor from starting
+- Bug Fixes causing AnimatedUsernameColor from pushing updates through automatically
+
+### 1.0.0
+- Initial Release of AnimatedUsernameColor.plugin.js
 
 ---
 
