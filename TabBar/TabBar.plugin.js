@@ -1,11 +1,11 @@
 /**
  * @name TabBar
  * @description Browser-style tab bar for Discord — drag to reorder, middle-click to close.
- * @version 0.3.6
+ * @version 0.3.7
  * @author Unknown654
  * @website https://github.com/Unknown42065/BetterDiscordAddons
  * @updateUrl https://raw.githubusercontent.com/Unknown42065/BetterDiscordAddons/main/TabBar/TabBar.plugin.js
- * @source    https://github.com/Unknown42065/BetterDiscordAddons/tree/main/TabBar
+ * @source https://github.com/Unknown42065/BetterDiscordAddons/tree/main/TabBar
  */
 
 module.exports = class TabBar {
@@ -18,26 +18,34 @@ module.exports = class TabBar {
         this.fluxUnsubscribe = null;
     }
 
+    findModule(...props) {
+        if (BdApi.Webpack?.getModule) {
+            return BdApi.Webpack.getModule(m => props.every(p => m?.[p] !== undefined));
+        }
+        return BdApi.findModuleByProps?.(...props) ?? null;
+    }
+
     start() {
         this.loadTabs();
         this.injectStyles();
         this.subscribeToFlux();
         this.setupDomObserver();
 
-        const SelectedChannelStore = BdApi.findModuleByProps("getChannelId", "getLastSelectedChannelId");
-        const SelectedGuildStore   = BdApi.findModuleByProps("getGuildId",   "getLastSelectedGuildId");
+        const SelectedChannelStore = this.findModule("getChannelId", "getLastSelectedChannelId");
+        const SelectedGuildStore   = this.findModule("getGuildId",   "getLastSelectedGuildId");
         const channelId = SelectedChannelStore?.getChannelId();
         const guildId   = SelectedGuildStore?.getGuildId();
         if (channelId) this.addOrActivateTab(channelId, guildId);
     }
 
     stop() {
-        BdApi.clearCSS("TabBar");
+        if (BdApi.DOM?.removeStyle) BdApi.DOM.removeStyle("TabBar");
+        else BdApi.clearCSS?.("TabBar");
+
         if (this.fluxUnsubscribe) this.fluxUnsubscribe();
         if (this.domObserver)     this.domObserver.disconnect();
         this.removeBar();
     }
-
 
     loadTabs() {
         try { this.tabs = JSON.parse(localStorage.getItem("TabBar_tabs") || "[]"); }
@@ -49,7 +57,7 @@ module.exports = class TabBar {
     }
 
     subscribeToFlux() {
-        const Dispatcher = BdApi.findModuleByProps("dispatch", "subscribe");
+        const Dispatcher = this.findModule("dispatch", "subscribe");
         this._onChannelSelect = ({ channelId, guildId }) => {
             if (channelId) this.addOrActivateTab(channelId, guildId || null);
         };
@@ -57,10 +65,9 @@ module.exports = class TabBar {
         this.fluxUnsubscribe = () => Dispatcher.unsubscribe("CHANNEL_SELECT", this._onChannelSelect);
     }
 
-
     getChannelInfo(channelId, guildId) {
-        const ChannelStore = BdApi.findModuleByProps("getChannel", "getDMFromUserId");
-        const GuildStore   = BdApi.findModuleByProps("getGuild",   "getGuilds");
+        const ChannelStore = this.findModule("getChannel", "getDMFromUserId");
+        const GuildStore   = this.findModule("getGuild",   "getGuilds");
         const channel = ChannelStore?.getChannel(channelId);
         const guild   = guildId ? GuildStore?.getGuild(guildId) : null;
 
@@ -68,7 +75,7 @@ module.exports = class TabBar {
         if (channel) {
             if (channel.name) channelName = channel.name;
             else if (channel.type === 1) {
-                const UserStore = BdApi.findModuleByProps("getUser", "getCurrentUser");
+                const UserStore = this.findModule("getUser", "getCurrentUser");
                 const recipient = channel.recipients?.[0];
                 const user = recipient ? UserStore?.getUser(recipient) : null;
                 channelName = user?.username || "DM";
@@ -125,7 +132,7 @@ module.exports = class TabBar {
     }
 
     navigateTo(channelId, guildId) {
-        const Nav = BdApi.findModuleByProps("transitionToGuild", "replaceWith");
+        const Nav = this.findModule("transitionToGuild", "replaceWith");
         if (guildId) Nav?.transitionToGuild(guildId, channelId);
         else         Nav?.transitionTo(`/channels/@me/${channelId}`);
     }
@@ -154,7 +161,7 @@ module.exports = class TabBar {
         if (!bar) {
             const chatCol = this.getChatColumn();
             if (!chatCol) return;
-            chatCol.style.display      = "flex";
+            chatCol.style.display       = "flex";
             chatCol.style.flexDirection = "column";
 
             bar = document.createElement("div");
@@ -246,40 +253,40 @@ module.exports = class TabBar {
     }
 
     injectStyles() {
-        BdApi.injectCSS("TabBar", `
+        const css = `
             #tabbar-root {
-                display:          flex;
-                align-items:      center;
-                background:       var(--background-secondary);
-                border-bottom:    1px solid var(--background-tertiary);
-                padding:          0 6px;
-                height:           36px;
-                flex-shrink:      0;
-                overflow-x:       auto;
-                overflow-y:       hidden;
-                scrollbar-width:  none;
-                gap:              2px;
-                z-index:          10;
+                display:         flex;
+                align-items:     center;
+                background:      var(--background-secondary);
+                border-bottom:   1px solid var(--background-tertiary);
+                padding:         0 6px;
+                height:          36px;
+                flex-shrink:     0;
+                overflow-x:      auto;
+                overflow-y:      hidden;
+                scrollbar-width: none;
+                gap:             2px;
+                z-index:         10;
             }
             #tabbar-root::-webkit-scrollbar { display: none; }
 
             .tabbar-tab {
-                display:        flex;
-                align-items:    center;
-                gap:            5px;
-                padding:        0 6px 0 7px;
-                height:         27px;
-                border-radius:  5px;
-                cursor:         pointer;
-                font-size:      12px;
-                font-weight:    500;
-                color:          var(--text-muted);
-                white-space:    nowrap;
-                user-select:    none;
-                flex-shrink:    0;
-                max-width:      170px;
-                transition:     background 0.12s, color 0.12s, border-color 0.12s;
-                border:         1px solid transparent;
+                display:       flex;
+                align-items:   center;
+                gap:           5px;
+                padding:       0 6px 0 7px;
+                height:        27px;
+                border-radius: 5px;
+                cursor:        pointer;
+                font-size:     12px;
+                font-weight:   500;
+                color:         var(--text-muted);
+                white-space:   nowrap;
+                user-select:   none;
+                flex-shrink:   0;
+                max-width:     170px;
+                transition:    background 0.12s, color 0.12s, border-color 0.12s;
+                border:        1px solid transparent;
             }
             .tabbar-tab:hover {
                 background: var(--background-modifier-hover);
@@ -316,8 +323,8 @@ module.exports = class TabBar {
                 min-width:     0;
             }
             .tabbar-name::before {
-                content:  '#';
-                opacity:  0.45;
+                content:      '#';
+                opacity:      0.45;
                 margin-right: 1px;
             }
             .tabbar-tab.active .tabbar-name::before { opacity: 0.6; }
@@ -339,6 +346,9 @@ module.exports = class TabBar {
             .tabbar-tab:hover .tabbar-close,
             .tabbar-tab.active .tabbar-close { opacity: 0.5; }
             .tabbar-close:hover              { opacity: 1 !important; color: var(--text-danger); }
-        `);
+        `;
+
+        if (BdApi.DOM?.addStyle) BdApi.DOM.addStyle("TabBar", css);
+        else BdApi.injectCSS?.("TabBar", css);
     }
 };
