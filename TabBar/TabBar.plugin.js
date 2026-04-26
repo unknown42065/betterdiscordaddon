@@ -1,11 +1,11 @@
 /**
  * @name TabBar
  * @description Browser-style tab bar for Discord — drag to reorder, middle-click to close.
- * @version 0.4.2
+ * @version 0.4.3
  * @author Unknown654
  * @authorLink https://github.com/Unknown42065/
  * @website https://github.com/Unknown42065/BetterDiscordAddons
- * @updateUrl https://raw.githubusercontent.com/Unknown42065/BetterDiscordAddons/main/TabBar/TabBar.plugin.js
+ * @updateURL https://raw.githubusercontent.com/Unknown42065/BetterDiscordAddons/main/TabBar/TabBar.plugin.js
  * @source https://github.com/Unknown42065/BetterDiscordAddons/tree/main/TabBar
  */
 
