@@ -1,7 +1,7 @@
 /**
  * @name StatusAura
  * @description Reads your Spotify or YT Music activity and shifts Discord's accent colors to match the album art palette. Plugin + live theme in one.
- * @version 1.1.0
+ * @version 1.2.0
  * @author Unknown654
  * @authorLink https://github.com/Unknown42065/
  * @website https://github.com/Unknown42065/BetterDiscordAddons
@@ -10,18 +10,18 @@
  */
 
 const PLUGIN_NAME = "StatusAura";
-
+ 
 const YTMUSIC_APP_IDS = new Set([
-    "503557087041683458",
-    "1020414178101817374", 
-    "463151177836658699",  
+    "503557087041683458",   // PreMiD
+    "1020414178101817374",  // YouTube Music RPC (common standalone)
+    "463151177836658699",   // PreMiD alternative
 ]);
-
+ 
 module.exports = class StatusAura {
-
+ 
     constructor() {
         this.defaultSettings = {
-            transitionSpeed:  "medium",  
+            transitionSpeed:  "medium",   
             intensity:        "balanced", 
             affectButtons:    true,
             affectScrollbars: true,
@@ -35,10 +35,12 @@ module.exports = class StatusAura {
         this._unsubSpotify      = null;
         this._unsubPresence     = null;
         this._retryFlux         = null;
+        this._pollInterval      = null;
         this._styleIdTheme      = `${PLUGIN_NAME}-theme`;
         this._styleIdTransition = `${PLUGIN_NAME}-transition`;
+        this._lastDebug         = null;
     }
-
+ 
     _requireLib() {
         if (!window.Unknown654Lib) {
             BdApi.UI?.showToast?.(`${PLUGIN_NAME} requires Unknown654Lib — please install it first.`, { type: "error" });
@@ -46,67 +48,79 @@ module.exports = class StatusAura {
         }
         return true;
     }
-
+ 
     start() {
         if (!this._requireLib()) return;
         const Lib = window.Unknown654Lib;
-
+ 
         const saved = Lib.loadData(PLUGIN_NAME, "settings", {});
         this.settings = { ...this.defaultSettings, ...saved };
-
+ 
         Lib.addStyle(this._styleIdTransition, this._buildTransitionCss());
-
+ 
         this._retryFlux = new Lib.Retry({
             interval: 500,
             maxTries: 20,
             onFail: () => Lib.showToast(`${PLUGIN_NAME}: Could not hook into Dispatcher. Try Ctrl+R.`, { type: "error" }),
         });
-
+ 
         this._retryFlux.start(() => {
             const Dispatcher = Lib.getDispatcher();
             if (!Dispatcher) return false;
             this._onSpotifyState = (data) => this._handleSpotifyState(data);
-            Dispatcher.subscribe("SPOTIFY_PLAYER_STATE", this._onSpotifyState);
-            this._unsubSpotify = () => Dispatcher.unsubscribe("SPOTIFY_PLAYER_STATE", this._onSpotifyState);
+            Dispatcher.subscribe("SPOTIFY_PLAYER_STATE",        this._onSpotifyState);
+            Dispatcher.subscribe("SPOTIFY_PLAYER_STATE_UPDATE", this._onSpotifyState);
+            this._unsubSpotify = () => {
+                Dispatcher.unsubscribe("SPOTIFY_PLAYER_STATE",        this._onSpotifyState);
+                Dispatcher.unsubscribe("SPOTIFY_PLAYER_STATE_UPDATE", this._onSpotifyState);
+            };
+ 
             this._onPresenceUpdate = (data) => this._handlePresenceUpdate(data);
             Dispatcher.subscribe("PRESENCE_UPDATES", this._onPresenceUpdate);
-            this._unsubPresence = () => Dispatcher.unsubscribe("PRESENCE_UPDATES", this._onPresenceUpdate);
+            Dispatcher.subscribe("PRESENCE_UPDATE",  this._onPresenceUpdate);
+            this._unsubPresence = () => {
+                Dispatcher.unsubscribe("PRESENCE_UPDATES", this._onPresenceUpdate);
+                Dispatcher.unsubscribe("PRESENCE_UPDATE",  this._onPresenceUpdate);
+            };
+ 
             this._doInitialCheck();
-
+            this._pollInterval = setInterval(() => this._doInitialCheck(), 5000);
+ 
             return true;
         });
     }
-
+ 
     stop() {
         if (!window.Unknown654Lib) return;
         const Lib = window.Unknown654Lib;
-
+ 
         this._retryFlux?.stop();
         this._unsubSpotify?.();
         this._unsubPresence?.();
+        if (this._pollInterval) { clearInterval(this._pollInterval); this._pollInterval = null; }
         Lib.removeStyle(this._styleIdTheme);
         Lib.removeStyle(this._styleIdTransition);
         this._currentArtUrl = null;
         this._currentSource = null;
     }
-
+ 
     getSettingsPanel() {
         const panel = document.createElement("div");
         panel.style.cssText = "padding:16px;color:var(--text-normal);font-family:var(--font-primary);";
-
+ 
         const save = () => {
             window.Unknown654Lib?.saveData(PLUGIN_NAME, "settings", this.settings);
             window.Unknown654Lib?.removeStyle(this._styleIdTransition);
             window.Unknown654Lib?.addStyle(this._styleIdTransition, this._buildTransitionCss());
         };
-
+ 
         const section = (label) => {
             const h = document.createElement("h3");
             h.textContent = label;
             h.style.cssText = "font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin:18px 0 8px;";
             panel.appendChild(h);
         };
-
+ 
         const row = (label, el) => {
             const wrap = document.createElement("div");
             wrap.style.cssText = "display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--background-modifier-accent);";
@@ -117,7 +131,7 @@ module.exports = class StatusAura {
             wrap.appendChild(el);
             panel.appendChild(wrap);
         };
-
+ 
         const makeSelect = (options, current, onChange) => {
             const sel = document.createElement("select");
             sel.style.cssText = "background:var(--background-secondary);color:var(--text-normal);border:1px solid var(--background-tertiary);border-radius:4px;padding:4px 8px;font-size:13px;cursor:pointer;";
@@ -130,7 +144,7 @@ module.exports = class StatusAura {
             sel.addEventListener("change", () => onChange(sel.value));
             return sel;
         };
-
+ 
         const makeToggle = (checked, onChange) => {
             const label = document.createElement("label");
             label.style.cssText = "position:relative;display:inline-block;width:40px;height:22px;cursor:pointer;";
@@ -160,7 +174,7 @@ module.exports = class StatusAura {
             });
             return label;
         };
-
+ 
         section("Appearance");
         row("Transition speed", makeSelect(
             [["fast","Fast (0.3s)"],["medium","Medium (0.7s)"],["slow","Slow (1.5s)"]],
@@ -172,7 +186,7 @@ module.exports = class StatusAura {
             this.settings.intensity,
             v => { this.settings.intensity = v; save(); if (this._currentArtUrl) this._reapplyCurrentTheme(); }
         ));
-
+ 
         section("Theme Targets");
         const toggleMap = [
             ["affectButtons",    "Affect buttons"],
@@ -188,10 +202,11 @@ module.exports = class StatusAura {
                 if (this._currentArtUrl) this._reapplyCurrentTheme();
             }));
         });
-
+ 
         section("Current Status");
+ 
         const statusEl = document.createElement("div");
-        statusEl.style.cssText = "font-size:13px;color:var(--text-muted);padding:8px 0;display:flex;align-items:center;gap:8px;";
+        statusEl.style.cssText = "font-size:13px;color:var(--text-muted);padding:8px 0 4px;display:flex;align-items:center;gap:8px;";
         const dot = document.createElement("span");
         dot.style.cssText = `width:8px;height:8px;border-radius:50%;flex-shrink:0;background:${this._currentArtUrl ? "#43b581" : "var(--text-muted)"};`;
         statusEl.appendChild(dot);
@@ -201,38 +216,80 @@ module.exports = class StatusAura {
             : "Idle — no music detected";
         statusEl.appendChild(statusText);
         panel.appendChild(statusEl);
-
+ 
+        const refreshBtn = document.createElement("button");
+        refreshBtn.textContent = "Force Refresh";
+        refreshBtn.style.cssText = "margin:6px 0 2px;padding:5px 14px;border-radius:4px;border:none;background:var(--brand-experiment,#5865f2);color:#fff;font-size:13px;cursor:pointer;";
+        refreshBtn.addEventListener("click", () => {
+            this._doInitialCheck();
+            setTimeout(() => {
+                dot.style.background = this._currentArtUrl ? "#43b581" : "var(--text-muted)";
+                statusText.textContent = this._currentArtUrl
+                    ? `Active — sourced from ${this._currentSource === "spotify" ? "Spotify" : "YT Music"}`
+                    : "Idle — no music detected";
+                if (this._lastDebug) debugPre.textContent = JSON.stringify(this._lastDebug, null, 2);
+            }, 1200);
+        });
+        panel.appendChild(refreshBtn);
+        section("Debug Info");
+        const debugNote = document.createElement("p");
+        debugNote.textContent = "If Idle with music playing, click Force Refresh and check the info below. Open DevTools (Ctrl+Shift+I) for full logs.";
+        debugNote.style.cssText = "font-size:12px;color:var(--text-muted);margin:0 0 6px;line-height:1.5;";
+        panel.appendChild(debugNote);
+ 
+        const debugPre = document.createElement("pre");
+        debugPre.style.cssText = "font-size:11px;background:var(--background-secondary);padding:10px;border-radius:6px;overflow-x:auto;color:var(--text-muted);white-space:pre-wrap;word-break:break-all;max-height:200px;overflow-y:auto;";
+        debugPre.textContent = this._lastDebug ? JSON.stringify(this._lastDebug, null, 2) : "Click Force Refresh to populate.";
+        panel.appendChild(debugPre);
+ 
         return panel;
     }
-
+ 
     _getCurrentUserId() {
         try {
             const UserStore = window.Unknown654Lib.findModule("getCurrentUser");
             return UserStore?.getCurrentUser()?.id ?? null;
         } catch { return null; }
     }
-
+ 
     _doInitialCheck() {
+        const debug = { spotifyStore: null, spotifyPlaying: false, artUrl: null, uid: null, activities: [] };
+ 
         try {
-            const SpotifyStore = BdApi.Webpack?.getStore?.("SpotifyStore");
+            const SpotifyStore =
+                BdApi.Webpack?.getStore?.("SpotifyStore") ??
+                window.Unknown654Lib?.findModule?.("getPlaybackState", "wasAutoPaused") ??
+                window.Unknown654Lib?.findModule?.("getActiveSocketAndDevice", "getPlaybackState");
+ 
+            debug.spotifyStore = !!SpotifyStore;
+ 
             if (SpotifyStore) {
                 const state = SpotifyStore.getPlaybackState?.();
+                debug.spotifyPlaying = state?.isPlaying ?? false;
                 if (state?.isPlaying) {
                     const url = this._getSpotifyArtUrl(state);
-                    if (url) { this._processArtUrl(url, "spotify"); return; }
+                    debug.artUrl = url;
+                    if (url) { this._lastDebug = debug; this._processArtUrl(url, "spotify"); return; }
                 }
             }
-        } catch {}
-
+        } catch (e) { debug.spotifyErr = String(e); }
+ 
         try {
             const uid = this._getCurrentUserId();
-            if (!uid) return;
-            const PresenceStore = BdApi.Webpack?.getStore?.("PresenceStore");
+            debug.uid = uid;
+            if (!uid) { this._lastDebug = debug; return; }
+ 
+            const PresenceStore =
+                BdApi.Webpack?.getStore?.("PresenceStore") ??
+                window.Unknown654Lib?.findModule?.("getActivities", "getStatus");
+ 
             const activities = PresenceStore?.getActivities?.(uid) ?? [];
+            debug.activities = activities.map(a => ({ name: a.name, type: a.type, appId: a.application_id, hasSyncId: !!a.sync_id }));
+            this._lastDebug = debug;
             this._processActivities(activities);
-        } catch {}
+        } catch (e) { debug.presenceErr = String(e); this._lastDebug = debug; }
     }
-
+ 
     _handleSpotifyState(data) {
         if (!data) return;
         if (data.isPlaying && data.track) {
@@ -245,21 +302,20 @@ module.exports = class StatusAura {
             window.Unknown654Lib?.removeStyle(this._styleIdTheme);
         }
     }
-
+ 
     _handlePresenceUpdate(data) {
         const uid = this._getCurrentUserId();
         if (!uid) return;
-
+ 
         const updates = data?.updates ?? data?.presences ?? [];
         const mine = updates.find(u => u?.user?.id === uid);
         if (!mine) return;
-
+ 
         this._processActivities(mine.activities ?? []);
     }
-
+ 
     _processActivities(activities) {
         if (!Array.isArray(activities)) return;
-
         const ytActivity = activities.find(a =>
             a?.name?.toLowerCase().includes("youtube music") ||
             YTMUSIC_APP_IDS.has(a?.application_id)
@@ -268,7 +324,6 @@ module.exports = class StatusAura {
             const url = this._resolveActivityArtUrl(ytActivity);
             if (url) { this._processArtUrl(url, "ytmusic"); return; }
         }
-
         const spotifyActivity = activities.find(a =>
             a?.type === 2 && a?.sync_id && a?.name?.toLowerCase() === "spotify"
         );
@@ -276,30 +331,30 @@ module.exports = class StatusAura {
             const url = this._resolveActivityArtUrl(spotifyActivity);
             if (url) { this._processArtUrl(url, "spotify"); return; }
         }
-
+ 
         if (this._currentSource === "ytmusic") {
             this._currentArtUrl = null;
             this._currentSource = null;
             window.Unknown654Lib?.removeStyle(this._styleIdTheme);
         }
     }
-
+ 
     _getSpotifyArtUrl(stateOrEvent) {
         const img = stateOrEvent?.track?.album?.image
                  ?? stateOrEvent?.track?.album?.images?.[1]
                  ?? stateOrEvent?.track?.album?.images?.[0];
         return img?.url ?? null;
     }
-
+ 
     _resolveActivityArtUrl(activity) {
         const img = activity?.assets?.large_image;
         if (!img) return null;
-
+ 
         if (img.startsWith("spotify:")) {
             const id = img.replace("spotify:", "");
             return `https://i.scdn.co/image/${id}`;
         }
-
+ 
         if (img.startsWith("mp:external/")) {
             const stripped = img.replace("mp:external/", "");
             const parts = stripped.split("/");
@@ -317,16 +372,15 @@ module.exports = class StatusAura {
         }
 
         if (img.startsWith("http")) return img;
-
+ 
         return null;
     }
-
     async _processArtUrl(url, source) {
         if (url === this._currentArtUrl) return;
-
+ 
         this._currentArtUrl = url;
         this._currentSource = source;
-
+ 
         try {
             const palette = await this._extractPalette(url);
             if (palette && this._currentArtUrl === url) {
@@ -335,21 +389,21 @@ module.exports = class StatusAura {
         } catch {
         }
     }
-
+ 
     _reapplyCurrentTheme() {
         if (!this._currentArtUrl) return;
         this._extractPalette(this._currentArtUrl).then(palette => {
             if (palette) this._applyTheme(palette);
         }).catch(() => {});
     }
-
+ 
     _extractPalette(imageUrl) {
         return new Promise((resolve, reject) => {
             const img = new Image();
             img.crossOrigin = "anonymous";
-
+ 
             const timeout = setTimeout(() => reject(new Error("timeout")), 8000);
-
+ 
             img.onload = () => {
                 clearTimeout(timeout);
                 try {
@@ -359,33 +413,31 @@ module.exports = class StatusAura {
                     const ctx = canvas.getContext("2d");
                     ctx.drawImage(img, 0, 0, SIZE, SIZE);
                     const { data } = ctx.getImageData(0, 0, SIZE, SIZE);
-
+ 
                     const pixels = [];
                     for (let i = 0; i < data.length; i += 4) {
                         const r = data[i], g = data[i + 1], b = data[i + 2], a = data[i + 3];
                         if (a < 128) continue;
-
+ 
                         const brightness = (r * 0.299 + g * 0.587 + b * 0.114) / 255;
                         const max = Math.max(r, g, b);
                         const min = Math.min(r, g, b);
                         const sat = max === 0 ? 0 : (max - min) / max;
-
                         if (brightness < 0.07 || brightness > 0.95 || sat < 0.10) continue;
-
+ 
                         const [h, s, l] = this._rgbToHsl(r, g, b);
                         const vibrancy = sat * 1.6 + (1 - Math.abs(brightness - 0.5) * 2) * 0.4;
                         pixels.push({ r, g, b, h, s, l, brightness, sat, vibrancy });
                     }
-
+ 
                     if (pixels.length < 8) {
                         resolve(this._fallbackPalette());
                         return;
                     }
-
+ 
                     pixels.sort((a, b) => b.vibrancy - a.vibrancy);
-
+ 
                     const primary = pixels[0];
-
                     let secondary = null;
                     for (const p of pixels.slice(1)) {
                         const diff = Math.abs(p.h - primary.h);
@@ -395,11 +447,10 @@ module.exports = class StatusAura {
                         }
                     }
                     secondary = secondary ?? pixels[Math.max(1, Math.floor(pixels.length * 0.35))];
-
                     const [h, s] = [primary.h, primary.s];
                     const sSat   = Math.min(s * 1.15, 0.95);
                     const mSat   = Math.min(s * 0.50, 0.70);
-
+ 
                     resolve({
                         primary:    [primary.r, primary.g, primary.b],
                         secondary:  [secondary.r, secondary.g, secondary.b],
@@ -410,12 +461,12 @@ module.exports = class StatusAura {
                     });
                 } catch (e) { reject(e); }
             };
-
+ 
             img.onerror = () => { clearTimeout(timeout); reject(new Error("image load failed")); };
             img.src = imageUrl;
         });
     }
-
+ 
     _fallbackPalette() {
         return {
             primary:   [88, 101, 242],
@@ -426,7 +477,6 @@ module.exports = class StatusAura {
             hsl:       [235, 0.856, 0.647],
         };
     }
-
     _rgbToHsl(r, g, b) {
         r /= 255; g /= 255; b /= 255;
         const max = Math.max(r, g, b), min = Math.min(r, g, b);
@@ -442,7 +492,7 @@ module.exports = class StatusAura {
         }
         return [h * 360, s, l];
     }
-
+ 
     _hslToRgb(h, s, l) {
         h /= 360;
         if (s === 0) { const v = Math.round(l * 255); return [v, v, v]; }
@@ -461,7 +511,7 @@ module.exports = class StatusAura {
         const css = this._buildThemeCss(palette);
         window.Unknown654Lib.addStyle(this._styleIdTheme, css);
     }
-
+ 
     _intensityAlpha(base) {
         switch (this.settings.intensity) {
             case "subtle":   return base * 0.45;
@@ -469,10 +519,11 @@ module.exports = class StatusAura {
             default:         return base;
         }
     }
-
+ 
     _buildThemeCss(palette) {
         const { primary, light, dark, muted, hsl } = palette;
         const [h, s] = hsl;
+ 
         const rgb  = arr => arr.join(", ");
         const pr   = `rgb(${rgb(primary)})`;
         const li   = `rgb(${rgb(light)})`;
@@ -499,7 +550,7 @@ module.exports = class StatusAura {
         const brand500 = `rgb(${b5r}, ${b5g}, ${b5b})`;
         const [b6r, b6g, b6b] = this._hslToRgb(h, scaleSat, 0.42);
         const brand560 = `rgb(${b6r}, ${b6g}, ${b6b})`;
-
+ 
         let css = `
 /* ═══ StatusAura — live album art palette ═══ */
 :root {
@@ -512,7 +563,7 @@ ${scaleVars}
     --aura-light:       ${li};
     --aura-dark:        ${dk};
 }
-
+ 
 /* Chat input glow */
 [class*="channelTextArea-"] [class*="inner-"] {
     box-shadow:
@@ -520,19 +571,19 @@ ${scaleVars}
         0 2px 20px rgba(${rgb(primary)}, ${(parseFloat(glowA) * 0.5).toFixed(2)}) !important;
     transition: box-shadow var(--aura-speed) ease;
 }
-
+ 
 /* Active channel / selected state */
 [class*="selected-"] [class*="link-"],
 [class*="modeSelected-"] {
     background-color: rgba(${rgb(primary)}, ${selA}) !important;
 }
-
+ 
 /* Selection highlight */
 ::selection {
     background: rgba(${rgb(primary)}, 0.35);
 }
 `;
-
+ 
         if (this.settings.affectButtons) css += `
 /* Primary buttons */
 [class*="colorBrand-"]:not(:disabled) {
@@ -546,7 +597,7 @@ ${scaleVars}
     background-color: ${pr} !important;
 }
 `;
-
+ 
         if (this.settings.affectScrollbars) css += `
 /* Scrollbars */
 ::-webkit-scrollbar-thumb {
@@ -556,7 +607,7 @@ ${scaleVars}
     background-color: rgba(${rgb(primary)}, ${scrollHA}) !important;
 }
 `;
-
+ 
         if (this.settings.affectMentions) css += `
 /* Mentions */
 [class*="mentioned-"] {
@@ -571,7 +622,7 @@ ${scaleVars}
     border-color: rgba(${rgb(primary)}, 0.20) !important;
 }
 `;
-
+ 
         if (this.settings.affectBadges) css += `
 /* Notification / unread badges */
 [class*="numberBadge-"],
@@ -590,7 +641,7 @@ ${scaleVars}
     box-shadow: inset 0 0 0 2px ${pr} !important;
 }
 `;
-
+ 
         if (this.settings.backgroundTint) css += `
 /* Subtle background tint */
 [class*="sidebar-"]::after,
@@ -603,17 +654,16 @@ ${scaleVars}
     z-index: 0;
 }
 `;
-
+ 
         return css.trim();
     }
-
     _buildTransitionCss() {
         const speeds = { fast: "0.3s", medium: "0.7s", slow: "1.5s" };
         const speed  = speeds[this.settings.transitionSpeed] ?? "0.7s";
-
+ 
         return `
 :root { --aura-speed: ${speed}; }
-
+ 
 [class*="channelTextArea-"] [class*="inner-"],
 [class*="selected-"] [class*="link-"],
 [class*="modeSelected-"],
@@ -639,3 +689,4 @@ ${scaleVars}
         `.trim();
     }
 };
+ 
