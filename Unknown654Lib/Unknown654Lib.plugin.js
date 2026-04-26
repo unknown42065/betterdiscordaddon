@@ -1,8 +1,9 @@
 /**
  * @name Unknown654Lib
  * @description Shared utility library for Unknown654's BetterDiscord plugins.
- * @version 1.0.0
+ * @version 1.1.0
  * @author Unknown654
+ * @authorLink https://github.com/Unknown42065/
  * @website https://github.com/Unknown42065/BetterDiscordAddons
  * @updateUrl https://raw.githubusercontent.com/Unknown42065/BetterDiscordAddons/main/Unknown654Lib/Unknown654Lib.plugin.js
  * @source https://github.com/Unknown42065/BetterDiscordAddons/tree/main/Unknown654Lib
