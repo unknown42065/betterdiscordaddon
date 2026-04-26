@@ -82,6 +82,9 @@ When music stops, the theme is removed and Discord returns to its default colors
 
 ## Changelog
 
+### 1.1.0
+- Updated @updateUrl to work with github commits.
+
 ### 1.0.0
 - Initial release
 - Spotify support via `SpotifyStore` + `SPOTIFY_PLAYER_STATE`
