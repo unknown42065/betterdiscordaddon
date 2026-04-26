@@ -58,6 +58,9 @@ Google Fonts are loaded on demand by appending a `<link>` tag to `<head>`, and a
 
 ## Changelog
 
+### 2.4.2
+- Minor Update: Increasted Max Tries from 10 -> 30
+
 ### 2.4.1
 - Added per-server toggle to settings panel.
 - Added Import / Export config via clipboard.
