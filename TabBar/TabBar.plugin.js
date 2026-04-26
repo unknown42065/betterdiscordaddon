@@ -3,9 +3,9 @@
  * @description Browser-style tab bar for Discord — drag to reorder, middle-click to close.
  * @version 0.3.6
  * @author Unknown654
- * @website https://github.com/Unknown42065/BetterDiscordAddon
- * @updateUrl https://raw.githubusercontent.com/Unknown42065/BetterDiscordAddons/main/AnimatedUsernameColor/AnimatedUsernameColor.plugin.js
- * @source    https://github.com/Unknown42065/BetterDiscordAddons/tree/main/AnimatedUsernameColor
+ * @website https://github.com/Unknown42065/BetterDiscordAddons
+ * @updateUrl https://raw.githubusercontent.com/Unknown42065/BetterDiscordAddons/main/TabBar/TabBar.plugin.js
+ * @source    https://github.com/Unknown42065/BetterDiscordAddons/tree/main/TabBar
  */
 
 module.exports = class TabBar {
@@ -18,15 +18,12 @@ module.exports = class TabBar {
         this.fluxUnsubscribe = null;
     }
 
-    // ─── Lifecycle ────────────────────────────────────────────────────────────
-
     start() {
         this.loadTabs();
         this.injectStyles();
         this.subscribeToFlux();
         this.setupDomObserver();
 
-        // If Discord already has a channel open, register it immediately
         const SelectedChannelStore = BdApi.findModuleByProps("getChannelId", "getLastSelectedChannelId");
         const SelectedGuildStore   = BdApi.findModuleByProps("getGuildId",   "getLastSelectedGuildId");
         const channelId = SelectedChannelStore?.getChannelId();
@@ -41,7 +38,6 @@ module.exports = class TabBar {
         this.removeBar();
     }
 
-    // ─── Persistence ──────────────────────────────────────────────────────────
 
     loadTabs() {
         try { this.tabs = JSON.parse(localStorage.getItem("TabBar_tabs") || "[]"); }
@@ -52,8 +48,6 @@ module.exports = class TabBar {
         localStorage.setItem("TabBar_tabs", JSON.stringify(this.tabs));
     }
 
-    // ─── Flux ─────────────────────────────────────────────────────────────────
-
     subscribeToFlux() {
         const Dispatcher = BdApi.findModuleByProps("dispatch", "subscribe");
         this._onChannelSelect = ({ channelId, guildId }) => {
@@ -63,7 +57,6 @@ module.exports = class TabBar {
         this.fluxUnsubscribe = () => Dispatcher.unsubscribe("CHANNEL_SELECT", this._onChannelSelect);
     }
 
-    // ─── Tab logic ────────────────────────────────────────────────────────────
 
     getChannelInfo(channelId, guildId) {
         const ChannelStore = BdApi.findModuleByProps("getChannel", "getDMFromUserId");
@@ -75,7 +68,6 @@ module.exports = class TabBar {
         if (channel) {
             if (channel.name) channelName = channel.name;
             else if (channel.type === 1) {
-                // DM — get recipient username
                 const UserStore = BdApi.findModuleByProps("getUser", "getCurrentUser");
                 const recipient = channel.recipients?.[0];
                 const user = recipient ? UserStore?.getUser(recipient) : null;
@@ -99,15 +91,12 @@ module.exports = class TabBar {
         const existing = this.tabs.findIndex(t => t.channelId === channelId);
 
         if (existing !== -1) {
-            // Already open — just mark active
             this.tabs.forEach((t, i) => { t.active = (i === existing); });
         } else {
-            // New tab
             this.tabs.forEach(t => { t.active = false; });
             const info = this.getChannelInfo(channelId, guildId);
             this.tabs.push({ ...info, active: true });
 
-            // Evict oldest non-active tab when over limit
             if (this.tabs.length > this.maxTabs) {
                 const evict = this.tabs.findIndex(t => !t.active);
                 if (evict !== -1) this.tabs.splice(evict, 1);
@@ -141,10 +130,7 @@ module.exports = class TabBar {
         else         Nav?.transitionTo(`/channels/@me/${channelId}`);
     }
 
-    // ─── DOM ──────────────────────────────────────────────────────────────────
-
     setupDomObserver() {
-        // Re-inject bar if Discord re-renders the chat area
         this.domObserver = new MutationObserver(() => {
             if (!document.getElementById("tabbar-root")) this.renderBar();
         });
@@ -152,7 +138,6 @@ module.exports = class TabBar {
     }
 
     getChatColumn() {
-        // Discord's main chat column — try several known selectors in order of specificity
         return (
             document.querySelector('[class*="chatContent-"]')  ||
             document.querySelector('[class*="chat-"]')          ||
@@ -165,11 +150,10 @@ module.exports = class TabBar {
     }
 
     renderBar() {
-        // Find or create the container
         let bar = document.getElementById("tabbar-root");
         if (!bar) {
             const chatCol = this.getChatColumn();
-            if (!chatCol) return;                   // chat not mounted yet — observer will retry
+            if (!chatCol) return;
             chatCol.style.display      = "flex";
             chatCol.style.flexDirection = "column";
 
@@ -186,7 +170,6 @@ module.exports = class TabBar {
             el.draggable   = true;
             el.dataset.idx = index;
 
-            // Server icon
             if (tab.guildIcon) {
                 const img = document.createElement("img");
                 img.src       = tab.guildIcon;
@@ -194,27 +177,23 @@ module.exports = class TabBar {
                 img.onerror   = () => img.remove();
                 el.appendChild(img);
             } else {
-                // Fallback: colored dot for DMs
                 const dot = document.createElement("span");
                 dot.className = "tabbar-dot";
                 el.appendChild(dot);
             }
 
-            // Channel name
             const name = document.createElement("span");
             name.className   = "tabbar-name";
             name.textContent = tab.channelName;
             name.title       = `#${tab.channelName}  —  ${tab.guildName}`;
             el.appendChild(name);
 
-            // Close button
             const close = document.createElement("span");
             close.className   = "tabbar-close";
             close.textContent = "✕";
             close.title       = "Close tab";
             el.appendChild(close);
 
-            // ── Events ──
             el.addEventListener("click", e => {
                 if (close.contains(e.target)) return;
                 this.navigateTo(tab.channelId, tab.guildId);
@@ -225,16 +204,13 @@ module.exports = class TabBar {
                 this.removeTab(tab.channelId);
             });
 
-            // Middle-click to close
             el.addEventListener("auxclick", e => {
                 if (e.button === 1) this.removeTab(tab.channelId);
             });
 
-            // ── Drag-to-reorder ──
             el.addEventListener("dragstart", e => {
                 this.dragSrcIndex = index;
                 e.dataTransfer.effectAllowed = "move";
-                // slight delay so the element renders before it goes transparent
                 setTimeout(() => el.classList.add("dragging"), 0);
             });
 
@@ -268,8 +244,6 @@ module.exports = class TabBar {
             bar.appendChild(el);
         });
     }
-
-    // ─── Styles ───────────────────────────────────────────────────────────────
 
     injectStyles() {
         BdApi.injectCSS("TabBar", `
