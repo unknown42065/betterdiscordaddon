@@ -1,7 +1,7 @@
 /**
  * @name AnimatedUsernameColor
  * @description Animates your own username color in chat with customizable colors, speed, and font.
- * @version 2.4.0
+ * @version 2.4.1
  * @author Unknown654
  * @authorLink https://github.com/Unknown42065/
  * @website https://github.com/Unknown42065/BetterDiscordAddons
@@ -10,7 +10,7 @@
  */
 
 const PLUGIN_NAME = "AnimatedUsernameColor";
-
+ 
 const GOOGLE_FONTS = {
     "Press Start 2P":   "Press+Start+2P",
     "Dancing Script":   "Dancing+Script:wght@700",
@@ -20,7 +20,7 @@ const GOOGLE_FONTS = {
     "Orbitron":         "Orbitron:wght@700",
     "Permanent Marker": "Permanent+Marker",
 };
-
+ 
 const SYSTEM_FONTS = [
     { label: "Default",    value: "" },
     { label: "Comic Sans", value: "Comic Sans MS" },
@@ -29,7 +29,7 @@ const SYSTEM_FONTS = [
     { label: "Georgia",    value: "Georgia" },
     { label: "Papyrus",    value: "Papyrus" },
 ];
-
+ 
 const COLOR_PRESETS = [
     { name: "🏳️‍🌈 Rainbow", colors: ["#ff4444", "#ff9900", "#ffff00", "#44ff44", "#4488ff", "#aa44ff"] },
     { name: "🌅 Sunset",    colors: ["#ff6b6b", "#feca57", "#ff9f43", "#ee5a24"] },
@@ -40,84 +40,91 @@ const COLOR_PRESETS = [
     { name: "🌌 Galaxy",    colors: ["#a29bfe", "#6c5ce7", "#fd79a8", "#0984e3"] },
     { name: "🔥 Fire",      colors: ["#ff4444", "#ff6600", "#ffaa00", "#ff2200"] },
 ];
-
+ 
 module.exports = class AnimatedUsernameColor {
-
+ 
     constructor() {
         this.defaultSettings = {
-            colors: ["#ff4444", "#ff9900", "#ffff00", "#44ff44", "#4488ff", "#aa44ff"],
-            speed:  4,
-            font:   "",
+            colors:          ["#ff4444", "#ff9900", "#ffff00", "#44ff44", "#4488ff", "#aa44ff"],
+            speed:           4,
+            font:            "",
             animStyle:       "cycle",
-            disabledServers: []
+            disabledServers: [],
         };
-        this._retryCount = 0;
-        this._maxRetries = 10;
-        this._retryTimer = null;
         this.currentUser = null;
         this._names      = [];
         this._observer   = null;
         this._fontLinkEl = null;
+        this._retryInit  = null;
     }
-
+ 
+    _requireLib() {
+        if (!window.Unknown654Lib) {
+            BdApi.UI?.showToast?.(
+                `${PLUGIN_NAME} requires Unknown654Lib — please install it first.`,
+                { type: "error" }
+            );
+            return false;
+        }
+        return true;
+    }
+ 
     start() {
-        const saved = BdApi.Data.load(PLUGIN_NAME, "settings") ?? {};
+        if (!this._requireLib()) return;
+        const Lib = window.Unknown654Lib;
+ 
+        const saved = Lib.loadData(PLUGIN_NAME, "settings", {});
         this.settings = {
             ...this.defaultSettings,
             ...saved,
             colors: Array.isArray(saved.colors) && saved.colors.length >= 2
                 ? saved.colors
                 : [...this.defaultSettings.colors],
-            disabledServers: Array.isArray(saved.disabledServers) ? saved.disabledServers : []
+            disabledServers: Array.isArray(saved.disabledServers) ? saved.disabledServers : [],
         };
-        this._tryInit();
+ 
+        this._retryInit = new Lib.Retry({
+            interval: 500,
+            maxTries: 10,
+            onFail: () => Lib.showToast(`${PLUGIN_NAME}: Could not find your user. Try Ctrl+R.`, { type: "error" }),
+        });
+ 
+        this._retryInit.start(() => {
+            const UserStore = Lib.getStore("UserStore");
+            this.currentUser = UserStore?.getCurrentUser?.() ?? null;
+            if (!this.currentUser) return false;
+ 
+            const u = this.currentUser;
+            this._names = [...new Set([
+                u.username, u.globalName, u.displayName,
+                u.username?.toLowerCase(), u.globalName?.toLowerCase(), u.displayName?.toLowerCase(),
+            ].filter(Boolean))];
+ 
+            this._injectKeyframes();
+            this._loadFontIfNeeded(this.settings.font);
+            this._startObserver();
+            Lib.showToast(`${PLUGIN_NAME} enabled!`, { type: "success" });
+            return true;
+        });
     }
-
+ 
     stop() {
-        BdApi.DOM.removeStyle(PLUGIN_NAME);
+        if (!window.Unknown654Lib) return;
+        const Lib = window.Unknown654Lib;
+ 
+        Lib.removeStyle(PLUGIN_NAME);
         this._removeFontLink();
         this._stopObserver();
+        this._retryInit?.stop();
         document.querySelectorAll("[data-auc]").forEach(el => {
             el.style.removeProperty("animation");
             el.style.removeProperty("font-family");
             el.removeAttribute("data-auc");
         });
-        if (this._retryTimer) clearTimeout(this._retryTimer);
     }
-
-    _tryInit() {
-        try {
-            const UserStore = BdApi.Webpack.getStore("UserStore");
-            this.currentUser = UserStore?.getCurrentUser?.();
-        } catch(e) {}
-
-        if (!this.currentUser) {
-            if (this._retryCount < this._maxRetries) {
-                this._retryCount++;
-                this._retryTimer = setTimeout(() => this._tryInit(), 500);
-            } else {
-                BdApi.UI.showToast(`${PLUGIN_NAME}: Could not find your user. Try Ctrl+R.`, { type: "error" });
-            }
-            return;
-        }
-
-        const u = this.currentUser;
-        this._names = [...new Set([
-            u.username,
-            u.globalName,
-            u.displayName,
-            u.username?.toLowerCase(),
-            u.globalName?.toLowerCase(),
-            u.displayName?.toLowerCase(),
-        ].filter(Boolean))];
-
-        this._injectKeyframes();
-        this._loadFontIfNeeded(this.settings.font);
-        this._startObserver();
-        BdApi.UI.showToast(`${PLUGIN_NAME} enabled!`, { type: "success" });
-    }
-
+ 
     _injectKeyframes() {
+        const Lib    = window.Unknown654Lib;
         const colors = this.settings.colors;
         let css;
         if (this.settings.animStyle === "pulse") {
@@ -134,10 +141,10 @@ module.exports = class AnimatedUsernameColor {
             stops.push(`100% { color: ${colors[0]}; }`);
             css = `@keyframes auc-cycle { ${stops.join(" ")} }`;
         }
-        BdApi.DOM.removeStyle(PLUGIN_NAME);
-        BdApi.DOM.addStyle(PLUGIN_NAME, css);
+        Lib.removeStyle(PLUGIN_NAME);
+        Lib.addStyle(PLUGIN_NAME, css);
     }
-
+ 
     _loadFontIfNeeded(fontName) {
         this._removeFontLink();
         if (!fontName || !GOOGLE_FONTS[fontName]) return;
@@ -147,30 +154,28 @@ module.exports = class AnimatedUsernameColor {
         document.head.appendChild(link);
         this._fontLinkEl = link;
     }
-
+ 
     _removeFontLink() {
         this._fontLinkEl?.remove();
         this._fontLinkEl = null;
     }
-
+ 
     _currentGuildId() {
-        try {
-            return BdApi.Webpack.getStore("SelectedGuildStore")?.getGuildId() ?? null;
-        } catch(e) { return null; }
+        return window.Unknown654Lib?.getStore("SelectedGuildStore")?.getGuildId() ?? null;
     }
-
+ 
     _isEnabledInCurrentServer() {
         const guildId = this._currentGuildId();
         if (!guildId) return true;
         return !this.settings.disabledServers.includes(guildId);
     }
-
+ 
     _isOurName(text) {
         if (!text) return false;
         const t = text.trim();
         return this._names.includes(t) || this._names.includes(t.toLowerCase());
     }
-
+ 
     _applyStyle(el) {
         if (!el) return;
         el.style.setProperty("animation", `auc-cycle ${this.settings.speed}s linear infinite`, "important");
@@ -181,35 +186,31 @@ module.exports = class AnimatedUsernameColor {
         }
         el.setAttribute("data-auc", "1");
     }
-
+ 
     _removeStyle(el) {
         if (!el) return;
         el.style.removeProperty("animation");
         el.style.removeProperty("font-family");
         el.removeAttribute("data-auc");
     }
-
+ 
     _scanForNames(root) {
         if (!root || root.nodeType !== 1) return;
         const enabled = this._isEnabledInCurrentServer();
-        const walker = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
+        const walker  = document.createTreeWalker(root, NodeFilter.SHOW_ELEMENT);
         let node = walker.currentNode;
         while (node) {
             if (node.childElementCount <= 2) {
                 const text = node.textContent?.trim();
                 if (text && this._isOurName(text)) {
                     if (enabled) this._applyStyle(node);
-                    else this._removeStyle(node);
+                    else         this._removeStyle(node);
                 }
             }
             node = walker.nextNode();
         }
     }
-
-    _applyToExisting() {
-        this._scanForNames(document.body);
-    }
-
+ 
     _startObserver() {
         this._stopObserver();
         this._observer = new MutationObserver(mutations => {
@@ -220,16 +221,17 @@ module.exports = class AnimatedUsernameColor {
             }
         });
         this._observer.observe(document.body, { childList: true, subtree: true });
-        this._applyToExisting();
+        this._scanForNames(document.body);
     }
-
+ 
     _stopObserver() {
         this._observer?.disconnect();
         this._observer = null;
     }
-
+ 
     saveAndRefresh() {
-        BdApi.Data.save(PLUGIN_NAME, "settings", this.settings);
+        const Lib = window.Unknown654Lib;
+        Lib.saveData(PLUGIN_NAME, "settings", this.settings);
         this._injectKeyframes();
         this._loadFontIfNeeded(this.settings.font);
         if (this._isEnabledInCurrentServer()) {
@@ -237,13 +239,21 @@ module.exports = class AnimatedUsernameColor {
         } else {
             document.querySelectorAll("[data-auc]").forEach(el => this._removeStyle(el));
         }
-        this._applyToExisting();
+        this._scanForNames(document.body);
     }
-
+ 
     getSettingsPanel() {
+        const Lib = window.Unknown654Lib;
+        if (!Lib) {
+            const msg = document.createElement("p");
+            msg.style.cssText = "padding:16px;color:var(--text-danger);font-size:14px;";
+            msg.textContent   = "Unknown654Lib is not installed. Settings unavailable.";
+            return msg;
+        }
+ 
         const previewId = `auc-preview-${Date.now()}`;
         let previewStyleEl = null;
-
+ 
         const panel = document.createElement("div");
         panel.style.cssText = `
             padding: 16px;
@@ -252,30 +262,30 @@ module.exports = class AnimatedUsernameColor {
             background: var(--background-secondary, #2f3136);
             border-radius: 8px;
         `;
-
+ 
         const title = document.createElement("h2");
         title.textContent = "🎨 Animated Username Color";
         title.style.cssText = "margin: 0 0 4px 0; font-size: 18px; color: var(--header-primary, #fff);";
         panel.appendChild(title);
-
+ 
         const subtitle = document.createElement("p");
         subtitle.textContent = "Customize your username color, font, and animation speed.";
         subtitle.style.cssText = "margin: 0 0 20px 0; font-size: 13px; opacity: 0.6;";
         panel.appendChild(subtitle);
-
+ 
         const mkDivider = () => {
             const d = document.createElement("div");
             d.style.cssText = "border-top: 1px solid rgba(255,255,255,0.08); margin: 4px 0 20px 0;";
             return d;
         };
-
+ 
         const mkSectionLabel = text => {
             const l = document.createElement("div");
             l.textContent = text;
             l.style.cssText = "font-size: 11px; font-weight: 700; letter-spacing: 0.8px; opacity: 0.5; margin-bottom: 10px;";
             return l;
         };
-
+ 
         const previewWrap = document.createElement("div");
         previewWrap.style.cssText = "margin-bottom: 20px;";
         previewWrap.appendChild(mkSectionLabel("PREVIEW"));
@@ -285,7 +295,7 @@ module.exports = class AnimatedUsernameColor {
         preview.style.cssText = "font-size: 20px; font-weight: 700; display: inline-block;";
         previewWrap.appendChild(preview);
         panel.appendChild(previewWrap);
-
+ 
         const updatePreview = () => {
             const colors = this.settings.colors;
             if (colors.length < 2) return;
@@ -310,12 +320,12 @@ module.exports = class AnimatedUsernameColor {
             `;
         };
         updatePreview();
-
+ 
         panel.appendChild(mkDivider());
         panel.appendChild(mkSectionLabel("ANIMATION STYLE"));
         const animWrap = document.createElement("div");
         animWrap.style.cssText = "display: flex; gap: 8px; margin-bottom: 20px;";
-
+ 
         const refreshAnimButtons = () => {
             animWrap.querySelectorAll("button").forEach(b => {
                 const active = b.dataset.val === this.settings.animStyle;
@@ -323,7 +333,7 @@ module.exports = class AnimatedUsernameColor {
                 b.style.borderColor = active ? "#5865f2" : "rgba(255,255,255,0.15)";
             });
         };
-
+ 
         [["cycle", "🔄 Cycle"], ["pulse", "💓 Pulse"]].forEach(([val, label]) => {
             const btn = document.createElement("button");
             btn.textContent = label;
@@ -339,7 +349,7 @@ module.exports = class AnimatedUsernameColor {
         });
         refreshAnimButtons();
         panel.appendChild(animWrap);
-
+ 
         panel.appendChild(mkDivider());
         panel.appendChild(mkSectionLabel("COLOR PRESETS"));
         const presetsWrap = document.createElement("div");
@@ -355,32 +365,30 @@ module.exports = class AnimatedUsernameColor {
             btn.addEventListener("click", () => {
                 this.settings.colors = [...preset.colors];
                 updatePreview(); this.saveAndRefresh(); renderColors();
-                BdApi.UI.showToast(`Preset "${preset.name}" applied!`, { type: "success" });
+                Lib.showToast(`Preset "${preset.name}" applied!`, { type: "success" });
             });
             presetsWrap.appendChild(btn);
         });
         panel.appendChild(presetsWrap);
         panel.appendChild(mkDivider());
         panel.appendChild(mkSectionLabel("COLORS"));
-
+ 
         const ioRow = document.createElement("div");
         ioRow.style.cssText = "display: flex; gap: 8px; margin-bottom: 12px;";
         const ioBtnStyle = "background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.15); color: var(--text-muted,#a3a6aa); border-radius: 4px; padding: 5px 12px; cursor: pointer; font-size: 12px;";
-
+ 
         const exportBtn = document.createElement("button");
         exportBtn.textContent = "⬆ Export config";
         exportBtn.style.cssText = ioBtnStyle;
         exportBtn.addEventListener("click", () => {
             const json = JSON.stringify({
-                colors:    this.settings.colors,
-                speed:     this.settings.speed,
-                font:      this.settings.font,
-                animStyle: this.settings.animStyle
+                colors: this.settings.colors, speed: this.settings.speed,
+                font: this.settings.font, animStyle: this.settings.animStyle,
             });
             navigator.clipboard.writeText(json)
-                .then(() => BdApi.UI.showToast("Config copied to clipboard!", { type: "success" }));
+                .then(() => Lib.showToast("Config copied to clipboard!", { type: "success" }));
         });
-
+ 
         const importBtn = document.createElement("button");
         importBtn.textContent = "⬇ Import config";
         importBtn.style.cssText = ioBtnStyle;
@@ -398,20 +406,20 @@ module.exports = class AnimatedUsernameColor {
                 fontInput.value        = this.settings.font;
                 refreshAnimButtons();
                 updatePreview(); this.saveAndRefresh(); renderColors();
-                BdApi.UI.showToast("Config imported!", { type: "success" });
-            } catch(e) {
-                BdApi.UI.showToast("Clipboard doesn't contain a valid config.", { type: "error" });
+                Lib.showToast("Config imported!", { type: "success" });
+            } catch {
+                Lib.showToast("Clipboard doesn't contain a valid config.", { type: "error" });
             }
         });
-
+ 
         ioRow.appendChild(exportBtn);
         ioRow.appendChild(importBtn);
         panel.appendChild(ioRow);
-
+ 
         const colorList = document.createElement("div");
         colorList.style.cssText = "display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 14px; align-items: center;";
         panel.appendChild(colorList);
-
+ 
         const renderColors = () => {
             colorList.innerHTML = "";
             this.settings.colors.forEach((color, index) => {
@@ -425,7 +433,7 @@ module.exports = class AnimatedUsernameColor {
                 removeBtn.textContent = "✕";
                 removeBtn.style.cssText = "position: absolute; top: -6px; right: -6px; width: 18px; height: 18px; background: #ed4245; border: none; color: white; border-radius: 50%; cursor: pointer; font-size: 10px; display: flex; align-items: center; justify-content: center;";
                 removeBtn.addEventListener("click", () => {
-                    if (this.settings.colors.length <= 2) { BdApi.UI.showToast("Need at least 2 colors!", { type: "error" }); return; }
+                    if (this.settings.colors.length <= 2) { Lib.showToast("Need at least 2 colors!", { type: "error" }); return; }
                     this.settings.colors.splice(index, 1); updatePreview(); this.saveAndRefresh(); renderColors();
                 });
                 wrap.appendChild(swatch); wrap.appendChild(removeBtn); colorList.appendChild(wrap);
@@ -439,19 +447,19 @@ module.exports = class AnimatedUsernameColor {
             colorList.appendChild(addBtn);
         };
         renderColors();
-
+ 
         const resetBtn = document.createElement("button");
         resetBtn.textContent = "↺ Reset to defaults";
         resetBtn.style.cssText = "background: none; border: 1px solid rgba(255,255,255,0.15); color: var(--text-muted, #a3a6aa); border-radius: 4px; padding: 4px 10px; cursor: pointer; font-size: 12px; margin-bottom: 24px; display: block;";
         resetBtn.addEventListener("click", () => {
             this.settings.colors = [...this.defaultSettings.colors];
             updatePreview(); this.saveAndRefresh(); renderColors();
-            BdApi.UI.showToast("Colors reset!", { type: "success" });
+            Lib.showToast("Colors reset!", { type: "success" });
         });
         panel.appendChild(resetBtn);
         panel.appendChild(mkDivider());
         panel.appendChild(mkSectionLabel("FONT"));
-
+ 
         const fontInputWrap = document.createElement("div");
         fontInputWrap.style.cssText = "display: flex; gap: 8px; align-items: center; margin-bottom: 12px;";
         const fontInput = document.createElement("input");
@@ -464,7 +472,7 @@ module.exports = class AnimatedUsernameColor {
         clearFontBtn.addEventListener("click", () => { this.settings.font = ""; fontInput.value = ""; updatePreview(); this.saveAndRefresh(); });
         fontInputWrap.appendChild(fontInput); fontInputWrap.appendChild(clearFontBtn);
         panel.appendChild(fontInputWrap);
-
+ 
         const systemPresetsLabel = document.createElement("div");
         systemPresetsLabel.textContent = "SYSTEM FONTS";
         systemPresetsLabel.style.cssText = "font-size: 10px; font-weight: 700; letter-spacing: 0.8px; opacity: 0.35; margin-bottom: 8px;";
@@ -472,7 +480,7 @@ module.exports = class AnimatedUsernameColor {
         const systemPresetWrap = document.createElement("div");
         systemPresetWrap.style.cssText = "display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px;";
         panel.appendChild(systemPresetWrap);
-
+ 
         const googlePresetsLabel = document.createElement("div");
         googlePresetsLabel.textContent = "GOOGLE FONTS (loads from internet)";
         googlePresetsLabel.style.cssText = "font-size: 10px; font-weight: 700; letter-spacing: 0.8px; opacity: 0.35; margin-bottom: 8px;";
@@ -480,7 +488,7 @@ module.exports = class AnimatedUsernameColor {
         const googlePresetWrap = document.createElement("div");
         googlePresetWrap.style.cssText = "display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 20px;";
         panel.appendChild(googlePresetWrap);
-
+ 
         const renderPresetButtons = () => {
             systemPresetWrap.innerHTML = "";
             SYSTEM_FONTS.forEach(({ label, value }) => {
@@ -491,7 +499,7 @@ module.exports = class AnimatedUsernameColor {
                 systemPresetWrap.appendChild(btn);
             });
         };
-
+ 
         const renderGoogleButtons = () => {
             googlePresetWrap.innerHTML = "";
             Object.keys(GOOGLE_FONTS).forEach(fontName => {
@@ -504,11 +512,11 @@ module.exports = class AnimatedUsernameColor {
         };
         renderPresetButtons();
         renderGoogleButtons();
-
+ 
         panel.appendChild(mkDivider());
-
+ 
         const speedSection = document.createElement("div");
-        const speedHeader = document.createElement("div");
+        const speedHeader  = document.createElement("div");
         speedHeader.style.cssText = "display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;";
         const speedLabelEl = document.createElement("div");
         speedLabelEl.textContent = "CYCLE SPEED";
@@ -528,17 +536,17 @@ module.exports = class AnimatedUsernameColor {
         speedHint.style.cssText = "font-size: 11px; opacity: 0.4; margin-top: 4px;";
         speedSection.appendChild(speedHint);
         panel.appendChild(speedSection);
-
+ 
         panel.appendChild(mkDivider());
         panel.appendChild(mkSectionLabel("PER-SERVER TOGGLE"));
-
+ 
         const serverWrap = document.createElement("div");
         serverWrap.style.cssText = "margin-bottom: 20px;";
-
+ 
         const buildServerRow = () => {
             serverWrap.innerHTML = "";
             const guildId = this._currentGuildId();
-
+ 
             if (!guildId) {
                 const note = document.createElement("div");
                 note.textContent = "Open a server (not DMs) to toggle it here.";
@@ -546,22 +554,20 @@ module.exports = class AnimatedUsernameColor {
                 serverWrap.appendChild(note);
                 return;
             }
-
+ 
             let guildName = "Unknown Server";
-            try {
-                guildName = BdApi.Webpack.getStore("GuildStore")?.getGuild(guildId)?.name ?? guildName;
-            } catch(e) {}
-
+            try { guildName = Lib.getStore("GuildStore")?.getGuild(guildId)?.name ?? guildName; } catch {}
+ 
             const row = document.createElement("div");
             row.style.cssText = "display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.04); border-radius: 6px; padding: 10px 14px;";
-
+ 
             const nameEl = document.createElement("span");
             nameEl.textContent = guildName;
             nameEl.style.cssText = "font-size: 14px; font-weight: 600;";
-
+ 
             const toggleBtn = document.createElement("button");
             toggleBtn.style.cssText = "border: 1px solid; border-radius: 4px; padding: 5px 14px; cursor: pointer; font-size: 13px; font-weight: 600;";
-
+ 
             const refreshToggle = () => {
                 const disabled = this.settings.disabledServers.includes(guildId);
                 toggleBtn.textContent       = disabled ? "❌ Disabled" : "✅ Enabled";
@@ -570,25 +576,25 @@ module.exports = class AnimatedUsernameColor {
                 toggleBtn.style.color       = disabled ? "#ed4245"              : "#57f287";
             };
             refreshToggle();
-
+ 
             toggleBtn.addEventListener("click", () => {
                 const idx = this.settings.disabledServers.indexOf(guildId);
                 if (idx === -1) this.settings.disabledServers.push(guildId);
-                else           this.settings.disabledServers.splice(idx, 1);
+                else            this.settings.disabledServers.splice(idx, 1);
                 refreshToggle();
                 this.saveAndRefresh();
                 const nowDisabled = this.settings.disabledServers.includes(guildId);
-                BdApi.UI.showToast(nowDisabled ? `Disabled in ${guildName}` : `Enabled in ${guildName}`, { type: "info" });
+                Lib.showToast(nowDisabled ? `Disabled in ${guildName}` : `Enabled in ${guildName}`, { type: "info" });
             });
-
+ 
             row.appendChild(nameEl);
             row.appendChild(toggleBtn);
             serverWrap.appendChild(row);
         };
-
+ 
         buildServerRow();
         panel.appendChild(serverWrap);
-
+ 
         setTimeout(() => {
             if (!panel.parentElement) return;
             const obs = new MutationObserver(() => {
@@ -596,7 +602,8 @@ module.exports = class AnimatedUsernameColor {
             });
             obs.observe(panel.parentElement, { childList: true });
         }, 0);
-
+ 
         return panel;
     }
 };
+ 
