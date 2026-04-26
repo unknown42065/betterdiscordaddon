@@ -85,7 +85,7 @@ module.exports = class AnimatedUsernameColor {
  
         this._retryInit = new Lib.Retry({
             interval: 500,
-            maxTries: 10,
+            maxTries: 30,
             onFail: () => Lib.showToast(`${PLUGIN_NAME}: Could not find your user. Try Ctrl+R.`, { type: "error" }),
         });
  
