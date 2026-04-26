@@ -82,6 +82,13 @@ When music stops, the theme is removed and Discord returns to its default colors
 
 ## Changelog
 
+### 1.2.0 (Major Update)
+- Fixed bug causing Spotify not to show
+- Fixed bug causing YT Music not to show
+- Fixed Theme and Hue changing Bug
+- Spotify store lookup now tries three strategies
+- Plugin now subscribes to both PRESENCE_UPDATES and PRESENCE_UPDATE
+
 ### 1.1.0
 - Updated @updateUrl to work with github commits.
 
