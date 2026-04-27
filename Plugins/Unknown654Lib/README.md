@@ -84,7 +84,7 @@ retry.start(() => {
 ## Changelog
 
 ### 1.1.3
-- Added Dispatcher() safeguards
+- Added `Dispatcher()` safeguards
 - Updated API methods
 
 ### 1.1.1
