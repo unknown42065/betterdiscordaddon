@@ -82,6 +82,10 @@ When music stops, the theme is removed and Discord returns to its default colors
 
 ## Changelog
 
+## 1.2.2
+- Retry window doubled from 20 → 40 attempts
+- Own raw dispatcher scan as a fallback that runs independently
+
 ### 1.2.0 (Major Update)
 - Fixed bug causing Spotify not to show
 - Fixed bug causing YT Music not to show
