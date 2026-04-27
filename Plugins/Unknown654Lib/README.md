@@ -83,6 +83,10 @@ retry.start(() => {
 
 ## Changelog
 
+### 1.1.3
+- Added Dispatcher() safeguards
+- Updated API methods
+
 ### 1.1.1
 - **Fix:** `navigate()` now uses `getByKeys("transitionToGuild", "transitionTo")` as the first search path and checks that both `transitionToGuild` *and* `transitionTo` are present. The old filter required `replaceWith`, which is not always on the same module causing DM navigation to silently fail on some Discord builds.
 
