@@ -1,7 +1,7 @@
 /**
  * @name Unknown654Lib
  * @description Shared utility library for Unknown654's BetterDiscord plugins.
- * @version 1.1.2
+ * @version 1.1.3
  * @author Unknown654
  * @authorLink https://github.com/Unknown42065/
  * @website https://github.com/Unknown42065/BetterDiscordAddons
@@ -10,25 +10,25 @@
  */
 
 module.exports = class Unknown654Lib {
-
+ 
     start() {
         window.Unknown654Lib = this._buildApi();
     }
-
+ 
     stop() {
         delete window.Unknown654Lib;
     }
-
+ 
     getSettingsPanel() {
         const el = document.createElement("p");
         el.style.cssText = "padding:16px;color:var(--text-normal);font-size:14px;";
         el.textContent = "This is a shared utility library. It has no settings of its own.";
         return el;
     }
-
+ 
     _buildApi() {
         return {
-
+ 
             findModule(...props) {
                 if (BdApi.Webpack?.getModule) {
                     return BdApi.Webpack.getModule(
@@ -37,23 +37,60 @@ module.exports = class Unknown654Lib {
                 }
                 return BdApi.findModuleByProps?.(...props) ?? null;
             },
-
+ 
             getDispatcher() {
-                if (BdApi.Webpack?.getByKeys) {
-                    const m = BdApi.Webpack.getByKeys("dispatch", "subscribe");
-                    if (m) return m;
-                }
-                if (BdApi.Webpack?.getModule) {
-                    const m = BdApi.Webpack.getModule(
-                        m => typeof m?.dispatch    === "function" &&
-                             typeof m?.subscribe   === "function" &&
-                             typeof m?.unsubscribe === "function"
-                    );
-                    if (m) return m;
-                }
-                return BdApi.findModuleByProps?.("dispatch", "subscribe") ?? null;
+                // Strategy 1: getByKeys (fastest, modern BD)
+                try {
+                    if (BdApi.Webpack?.getByKeys) {
+                        const m = BdApi.Webpack.getByKeys("dispatch", "subscribe", "unsubscribe");
+                        if (m && typeof m.dispatch === "function") return m;
+                    }
+                } catch {}
+ 
+                // Strategy 2: getModule with strict function checks
+                try {
+                    if (BdApi.Webpack?.getModule) {
+                        const m = BdApi.Webpack.getModule(
+                            m => typeof m?.dispatch    === "function" &&
+                                 typeof m?.subscribe   === "function" &&
+                                 typeof m?.unsubscribe === "function" &&
+                                 typeof m?.register    === "function"
+                        );
+                        if (m) return m;
+                    }
+                } catch {}
+ 
+                // Strategy 3: getModule with relaxed checks (no register required)
+                try {
+                    if (BdApi.Webpack?.getModule) {
+                        const m = BdApi.Webpack.getModule(
+                            m => typeof m?.dispatch    === "function" &&
+                                 typeof m?.subscribe   === "function" &&
+                                 typeof m?.unsubscribe === "function"
+                        );
+                        if (m) return m;
+                    }
+                } catch {}
+ 
+                // Strategy 4: Look for the Flux dispatcher by _actionHandlers
+                try {
+                    if (BdApi.Webpack?.getModule) {
+                        const m = BdApi.Webpack.getModule(
+                            m => m?._actionHandlers != null &&
+                                 typeof m?.dispatch === "function"
+                        );
+                        if (m) return m;
+                    }
+                } catch {}
+ 
+                // Strategy 5: legacy BD API
+                try {
+                    return BdApi.findModuleByProps?.("dispatch", "subscribe", "unsubscribe") ?? null;
+                } catch {}
+ 
+                return null;
             },
-
+ 
             getStore(name) {
                 try {
                     return BdApi.Webpack?.getStore?.(name) ?? null;
@@ -61,32 +98,32 @@ module.exports = class Unknown654Lib {
                     return null;
                 }
             },
-
+ 
             addStyle(id, css) {
                 if (BdApi.DOM?.addStyle) BdApi.DOM.addStyle(id, css);
                 else BdApi.injectCSS?.(id, css);
             },
-
+ 
             removeStyle(id) {
                 if (BdApi.DOM?.removeStyle) BdApi.DOM.removeStyle(id);
                 else BdApi.clearCSS?.(id);
             },
-
+ 
             loadData(pluginName, key, fallback = null) {
                 return BdApi.Data?.load(pluginName, key) ?? fallback;
             },
-
+ 
             saveData(pluginName, key, value) {
                 BdApi.Data?.save(pluginName, key, value);
             },
-
+ 
             showToast(message, opts = {}) {
                 BdApi.UI?.showToast?.(message, opts);
             },
-
+ 
             navigate(channelId, guildId) {
                 let Nav = null;
-
+ 
                 if (BdApi.Webpack?.getByKeys) {
                     try { Nav = BdApi.Webpack.getByKeys("transitionToGuild", "transitionTo"); } catch {}
                 }
@@ -97,16 +134,16 @@ module.exports = class Unknown654Lib {
                              typeof m?.transitionTo      === "function"
                     );
                 }
-
+ 
                 // BD API fallback
                 if (!Nav) Nav = BdApi.findModuleByProps?.("transitionToGuild", "transitionTo") ?? null;
-
+ 
                 if (!Nav) return;
-
+ 
                 if (guildId) Nav.transitionToGuild?.(guildId, channelId);
                 else         Nav.transitionTo?.(`/channels/@me/${channelId}`);
             },
-
+ 
             Retry: class Retry {
                 constructor({ interval = 500, maxTries = 20, onFail = null } = {}) {
                     this._interval = interval;
@@ -115,7 +152,7 @@ module.exports = class Unknown654Lib {
                     this._count    = 0;
                     this._timer    = null;
                 }
-
+ 
                 start(fn) {
                     this.stop();
                     const attempt = () => {
@@ -130,7 +167,7 @@ module.exports = class Unknown654Lib {
                     };
                     attempt();
                 }
-
+ 
                 stop() {
                     clearTimeout(this._timer);
                     this._timer = null;
@@ -140,3 +177,4 @@ module.exports = class Unknown654Lib {
         };
     }
 };
+ 
