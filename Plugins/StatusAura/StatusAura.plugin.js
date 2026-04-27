@@ -1,7 +1,7 @@
 /**
  * @name StatusAura
  * @description Reads your Spotify or YT Music activity and shifts Discord's accent colors to match the album art palette. Plugin + live theme in one.
- * @version 1.2.0
+ * @version 1.2.2
  * @author Unknown654
  * @authorLink https://github.com/Unknown42065/
  * @website https://github.com/Unknown42065/BetterDiscordAddons
@@ -10,7 +10,6 @@
  */
 
 const PLUGIN_NAME = "StatusAura";
- 
 const YTMUSIC_APP_IDS = new Set([
     "503557087041683458",   // PreMiD
     "1020414178101817374",  // YouTube Music RPC (common standalone)
@@ -21,8 +20,8 @@ module.exports = class StatusAura {
  
     constructor() {
         this.defaultSettings = {
-            transitionSpeed:  "medium",   
-            intensity:        "balanced", 
+            transitionSpeed:  "medium",  
+            intensity:        "balanced",
             affectButtons:    true,
             affectScrollbars: true,
             affectMentions:   true,
@@ -31,7 +30,7 @@ module.exports = class StatusAura {
         };
         this.settings           = { ...this.defaultSettings };
         this._currentArtUrl     = null;
-        this._currentSource     = null;
+        this._currentSource     = null; 
         this._unsubSpotify      = null;
         this._unsubPresence     = null;
         this._retryFlux         = null;
@@ -60,12 +59,23 @@ module.exports = class StatusAura {
  
         this._retryFlux = new Lib.Retry({
             interval: 500,
-            maxTries: 20,
-            onFail: () => Lib.showToast(`${PLUGIN_NAME}: Could not hook into Dispatcher. Try Ctrl+R.`, { type: "error" }),
+            maxTries: 40,
+            onFail: () => Lib.showToast(`${PLUGIN_NAME}: Could not hook into Dispatcher. Try reloading Discord (Ctrl+R).`, { type: "error" }),
         });
  
         this._retryFlux.start(() => {
-            const Dispatcher = Lib.getDispatcher();
+            let Dispatcher = Lib.getDispatcher();
+            if (!Dispatcher) {
+                try {
+                    Dispatcher = BdApi.Webpack?.getModule?.(
+                        m => m?._actionHandlers != null && typeof m?.dispatch === "function"
+                    ) ?? BdApi.Webpack?.getModule?.(
+                        m => typeof m?.dispatch    === "function" &&
+                             typeof m?.subscribe   === "function" &&
+                             typeof m?.unsubscribe === "function"
+                    ) ?? null;
+                } catch {}
+            }
             if (!Dispatcher) return false;
             this._onSpotifyState = (data) => this._handleSpotifyState(data);
             Dispatcher.subscribe("SPOTIFY_PLAYER_STATE",        this._onSpotifyState);
@@ -82,7 +92,6 @@ module.exports = class StatusAura {
                 Dispatcher.unsubscribe("PRESENCE_UPDATES", this._onPresenceUpdate);
                 Dispatcher.unsubscribe("PRESENCE_UPDATE",  this._onPresenceUpdate);
             };
- 
             this._doInitialCheck();
             this._pollInterval = setInterval(() => this._doInitialCheck(), 5000);
  
@@ -144,7 +153,6 @@ module.exports = class StatusAura {
             sel.addEventListener("change", () => onChange(sel.value));
             return sel;
         };
- 
         const makeToggle = (checked, onChange) => {
             const label = document.createElement("label");
             label.style.cssText = "position:relative;display:inline-block;width:40px;height:22px;cursor:pointer;";
@@ -231,6 +239,7 @@ module.exports = class StatusAura {
             }, 1200);
         });
         panel.appendChild(refreshBtn);
+ 
         section("Debug Info");
         const debugNote = document.createElement("p");
         debugNote.textContent = "If Idle with music playing, click Force Refresh and check the info below. Open DevTools (Ctrl+Shift+I) for full logs.";
@@ -324,6 +333,7 @@ module.exports = class StatusAura {
             const url = this._resolveActivityArtUrl(ytActivity);
             if (url) { this._processArtUrl(url, "ytmusic"); return; }
         }
+ 
         const spotifyActivity = activities.find(a =>
             a?.type === 2 && a?.sync_id && a?.name?.toLowerCase() === "spotify"
         );
@@ -331,7 +341,7 @@ module.exports = class StatusAura {
             const url = this._resolveActivityArtUrl(spotifyActivity);
             if (url) { this._processArtUrl(url, "spotify"); return; }
         }
- 
+
         if (this._currentSource === "ytmusic") {
             this._currentArtUrl = null;
             this._currentSource = null;
@@ -349,7 +359,6 @@ module.exports = class StatusAura {
     _resolveActivityArtUrl(activity) {
         const img = activity?.assets?.large_image;
         if (!img) return null;
- 
         if (img.startsWith("spotify:")) {
             const id = img.replace("spotify:", "");
             return `https://i.scdn.co/image/${id}`;
@@ -366,15 +375,14 @@ module.exports = class StatusAura {
             }
             return `https://media.discordapp.net/external/${stripped}`;
         }
-
         if (activity?.application_id && !img.startsWith("http") && !img.includes("/")) {
             return `https://cdn.discordapp.com/app-assets/${activity.application_id}/${img}.png`;
         }
-
         if (img.startsWith("http")) return img;
  
         return null;
     }
+ 
     async _processArtUrl(url, source) {
         if (url === this._currentArtUrl) return;
  
@@ -436,7 +444,6 @@ module.exports = class StatusAura {
                     }
  
                     pixels.sort((a, b) => b.vibrancy - a.vibrancy);
- 
                     const primary = pixels[0];
                     let secondary = null;
                     for (const p of pixels.slice(1)) {
@@ -477,6 +484,7 @@ module.exports = class StatusAura {
             hsl:       [235, 0.856, 0.647],
         };
     }
+ 
     _rgbToHsl(r, g, b) {
         r /= 255; g /= 255; b /= 255;
         const max = Math.max(r, g, b), min = Math.min(r, g, b);
@@ -507,6 +515,7 @@ module.exports = class StatusAura {
         };
         return [Math.round(hue(h + 1 / 3) * 255), Math.round(hue(h) * 255), Math.round(hue(h - 1 / 3) * 255)];
     }
+ 
     _applyTheme(palette) {
         const css = this._buildThemeCss(palette);
         window.Unknown654Lib.addStyle(this._styleIdTheme, css);
@@ -516,7 +525,7 @@ module.exports = class StatusAura {
         switch (this.settings.intensity) {
             case "subtle":   return base * 0.45;
             case "vivid":    return Math.min(base * 1.55, 1.0);
-            default:         return base;
+            default:         return base; // balanced
         }
     }
  
@@ -546,6 +555,7 @@ module.exports = class StatusAura {
             const [r, g, b] = this._hslToRgb(h, scaleSat, l);
             return `    --brand-experiment-${key}: rgb(${r}, ${g}, ${b});`;
         }).join("\n");
+ 
         const [b5r, b5g, b5b] = this._hslToRgb(h, scaleSat, 0.50);
         const brand500 = `rgb(${b5r}, ${b5g}, ${b5b})`;
         const [b6r, b6g, b6b] = this._hslToRgb(h, scaleSat, 0.42);
@@ -657,6 +667,7 @@ ${scaleVars}
  
         return css.trim();
     }
+ 
     _buildTransitionCss() {
         const speeds = { fast: "0.3s", medium: "0.7s", slow: "1.5s" };
         const speed  = speeds[this.settings.transitionSpeed] ?? "0.7s";
