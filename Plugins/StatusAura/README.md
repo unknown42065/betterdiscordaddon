@@ -38,7 +38,7 @@ Discord doesn't natively expose YT Music as a presence. You need a third-party R
 | App | Platform | Notes |
 |-----|----------|-------|
 | [PreMiD](https://premid.app/) | Browser extension | Works on Chrome/Firefox; needs the YouTube Music presence script enabled |
-| [YouTube Music Discord RPC](https://github.com/XerxesNoble/youtube-music-discord-rpc) | Desktop | Standalone app, no browser needed |
+| [YouTube Music Discord RPC](https://github.com/Venipa/ytmdesktop2) | Desktop | Standalone app, no browser needed |
 | [discord-music-presence](https://github.com/ungive/discord-music-presence) | Desktop | Supports multiple players including YT Music |
 
 Once any of these are running and showing your status in Discord, StatusAura picks it up automatically.
